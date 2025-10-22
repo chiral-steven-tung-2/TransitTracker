@@ -10,4 +10,13 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    proxy: {
+      '/api/mta': {
+        target: 'https://bustime.mta.info',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/mta/, ''),
+      },
+    },
+  },
 })
