@@ -1,4 +1,5 @@
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet'
+import { useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 
@@ -7,6 +8,7 @@ import icon from 'leaflet/dist/images/marker-icon.png'
 import iconShadow from 'leaflet/dist/images/marker-shadow.png'
 import { useEffect, useState } from 'react'
 import { Button } from '../ui/button'
+import { Eye, RefreshCw } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 
@@ -55,6 +57,51 @@ const createCustomIcon = (color: string) => {
   })
 }
 
+// Create a distinct bus icon for live vehicle markers
+const createBusIcon = (color: string) => {
+  return L.divIcon({
+    className: 'bus-div-icon',
+    html: `
+      <div style="
+        background-color: ${color};
+        width: 28px;
+        height: 18px;
+        border-radius: 4px;
+        border: 2px solid white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        color: white;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        transform: rotate(0deg);
+      ">
+        <!-- simple bus SVG -->
+        <svg width="16" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="5" width="20" height="10" rx="2" fill="white" opacity="0.9" />
+          <circle cx="7" cy="17" r="1.5" fill="white" />
+          <circle cx="17" cy="17" r="1.5" fill="white" />
+        </svg>
+      </div>
+    `,
+    iconSize: [28, 18],
+    iconAnchor: [14, 9],
+    popupAnchor: [0, -9]
+  })
+}
+
+// Inline stroller SVG for a clearer stroller icon (small and single-color)
+function StrollerIcon({ size = 16, color = '#000' }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M6 6h2l2 6" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="7" cy="18" r="1.5" fill={color} />
+      <circle cx="17" cy="18" r="1.5" fill={color} />
+      <path d="M10 9h6a3 3 0 0 1 3 3v3" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 // Determine bus route color based on type in destination name
 const getBusRouteColor = (destinationName: string): string => {
   const upperDest = destinationName.toUpperCase();
@@ -87,6 +134,16 @@ export default function BusPage() {
   const [testStopId, setTestStopId] = useState<string>('502185')
   const [selectedDirection, setSelectedDirection] = useState<'0' | '1'>('0')
   const [routeGeometry, setRouteGeometry] = useState<RouteGeometry | null>(null)
+  const [map, setMap] = useState<L.Map | null>(null)
+  const [selectedStop, setSelectedStop] = useState<{
+    id: string
+    name: string
+    latitude: number
+    longitude: number
+  } | null>(null)
+  const [visibleRoutes, setVisibleRoutes] = useState<string[] | null>(null)
+  // compact mode is default and fixed
+  const compactMode = true
 
   // Check for dark mode
   useEffect(() => {
@@ -196,6 +253,77 @@ export default function BusPage() {
     }
   }
 
+  // Small helper component to grab map instance from context
+  function MapSetter() {
+    const m = useMap()
+    useEffect(() => {
+      setMap(m)
+    }, [m])
+    return null
+  }
+
+  // using lucide-react icons (Wheelchair for stroller, Eye for tracked)
+
+  // Select a stop: center map and fetch live arrivals for that stop
+  const handleSelectStop = async (stop: { id: string; name: string; latitude: number; longitude: number }) => {
+    setSelectedStop(stop)
+    // center map on the selected stop
+    if (map) {
+      try {
+        map.setView([stop.latitude, stop.longitude], 16)
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    setIsLoadingLiveBus(true)
+    setLiveBusData(null)
+    try {
+      const data = await fetchMTABusData(stop.id)
+      setLiveBusData(data)
+    } catch (err) {
+      console.error('Error fetching live bus data for stop', err)
+    } finally {
+      setIsLoadingLiveBus(false)
+    }
+  }
+
+  // Refresh live data for currently selected stop
+  const refreshLiveData = async () => {
+    if (!selectedStop) return
+    setIsLoadingLiveBus(true)
+    try {
+      const data = await fetchMTABusData(selectedStop.id)
+      setLiveBusData(data)
+    } catch (err) {
+      console.error('Error refreshing live bus data for stop', err)
+    } finally {
+      setIsLoadingLiveBus(false)
+    }
+  }
+
+  // Auto-refresh every 30 seconds while viewing a stop
+  useEffect(() => {
+    if (!selectedStop) return
+    const id = setInterval(() => {
+      refreshLiveData()
+    }, 30000)
+    return () => clearInterval(id)
+  }, [selectedStop])
+
+  // Derive list of unique routes from live data when it changes (only on first load, not on refresh)
+  useEffect(() => {
+    if (!liveBusData || !liveBusData.MonitoredStopVisit.length) {
+      setVisibleRoutes(null)
+      return
+    }
+    // Only set visibleRoutes if it's currently null (initial load), preserve user selection on refresh
+    if (visibleRoutes === null) {
+      const unique = Array.from(new Set(liveBusData.MonitoredStopVisit.map(m => m.PublishedLineName))).filter(Boolean) as string[]
+      setVisibleRoutes(unique)
+    }
+  }, [liveBusData])
+
   const handleTestLiveBus = async () => {
     setIsLoadingLiveBus(true);
     setLiveBusData(null);
@@ -220,6 +348,7 @@ export default function BusPage() {
           style={{ width: '100%', height: '100%' }}
           scrollWheelZoom={true}
         >
+          <MapSetter />
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url={
@@ -250,13 +379,18 @@ export default function BusPage() {
                     key={stop.id} 
                     position={[stop.latitude, stop.longitude]}
                     icon={createCustomIcon(routeColor)}
+                    eventHandlers={{
+                      click: () => handleSelectStop({ id: stop.id, name: stop.name, latitude: stop.latitude, longitude: stop.longitude })
+                    }}
                   >
                     <Popup>
-                      <strong>Stop {index + 1}: {stop.name}</strong>
-                      <br />
-                      ID: {stop.id}
-                      <br />
-                      Direction: {stop.direction}
+                      <div>
+                        <strong>Stop {index + 1}: {stop.name}</strong>
+                        <br />
+                        ID: {stop.id}
+                        <br />
+                        Direction: {stop.direction}
+                      </div>
                     </Popup>
                   </Marker>
                 ))}
@@ -281,6 +415,32 @@ export default function BusPage() {
                     dashArray="10, 10"
                   />
                 )}
+                {/* Live vehicle markers (if live data present and for this stop) */}
+                {liveBusData && liveBusData.MonitoredStopVisit.length > 0 && liveBusData.MonitoredStopVisit.map((mvj, idx) => {
+                  // use color based on route/destination
+                  // filter by visible routes if set
+                  if (visibleRoutes && visibleRoutes.length > 0 && !visibleRoutes.includes(mvj.PublishedLineName)) return null;
+                  const vColor = getBusRouteColor(mvj.DestinationName || mvj.PublishedLineName || '');
+                  // ensure coords
+                  if (!mvj.Latitude || !mvj.Longitude) return null;
+                  return (
+                    <Marker
+                      key={`live-${idx}-${mvj.VehicleRef}`}
+                      position={[mvj.Latitude, mvj.Longitude]}
+                      icon={createBusIcon(vColor)}
+                    >
+                      <Popup>
+                        <div>
+                          <strong>{mvj.PublishedLineName} → {mvj.DestinationName}</strong>
+                          <br />
+                          Vehicle: #{mvj.VehicleNumber ?? mvj.VehicleRef}
+                          <br />
+                          Status: {mvj.Monitored ? 'Tracked' : 'Not Tracked'}
+                        </div>
+                      </Popup>
+                    </Marker>
+                  )
+                })}
               </>
             );
           })()}
@@ -289,18 +449,27 @@ export default function BusPage() {
 
       {/* Content - Bottom on mobile, Right on desktop */}
       <div className="w-full lg:w-1/2 h-[50vh] lg:h-full p-4 lg:p-8 bg-background overflow-y-auto order-2 lg:order-2 relative z-10">
-        <h1 className="text-4xl font-semibold text-foreground mb-4">
-          Bus Routes
-        </h1>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-lg font-semibold text-foreground">Bus Time</h1>
+            <p className="text-sm text-muted-foreground">Live arrivals & vehicle locations</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="text-xs bg-muted rounded-full px-2 py-1 text-foreground/80">Auto-refresh: 30s</div>
+          </div>
+        </div>
 
         
 
-        <Tabs defaultValue="search" className="w-full" value={activeTab} onValueChange={setActiveTab}>
+        {/* If a stop is selected show the viewing panel only; otherwise show Tabs/search UI */}
+        {!selectedStop ? (
+          <Tabs defaultValue="search" className="w-full" value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="search">Search</TabsTrigger>
             <TabsTrigger value="closest">Closest</TabsTrigger>
             <TabsTrigger value="test">Test Live</TabsTrigger>
           </TabsList>
+
           <TabsContent value="search" className="mt-4">
             <div className="space-y-4">
               <div>
@@ -394,7 +563,7 @@ export default function BusPage() {
                       ? busStopsData.zeroDirStopsData 
                       : busStopsData.oneDirStopsData
                     ).map((stop, index) => (
-                      <li key={stop.id} className="text-sm p-2 hover:bg-accent rounded">
+                      <li key={stop.id} className="text-sm p-2 hover:bg-accent rounded cursor-pointer" onClick={() => handleSelectStop({ id: stop.id, name: stop.name, latitude: stop.latitude, longitude: stop.longitude })}>
                         {index + 1}. {stop.name}
                       </li>
                     ))}
@@ -429,66 +598,71 @@ export default function BusPage() {
               {liveBusData && (
                 <div className="mt-6 space-y-4">
                   <div className="p-4 border rounded-lg bg-card">
-                    <h3 className="font-semibold text-lg mb-2">Data Received: {liveBusData.DataReceivedTime}</h3>
+                            <h3 className="font-semibold text-lg mb-2">Live arrivals</h3>
                     <p className="text-sm text-muted-foreground mb-4">
                       Found {liveBusData.MonitoredStopVisit.length} buses
                     </p>
                   </div>
 
                   {liveBusData.MonitoredStopVisit.length > 0 ? (
-                    <div className="space-y-3">
-                      {liveBusData.MonitoredStopVisit.map((bus, index) => (
-                        <div 
-                          key={index}
-                          className="p-4 border rounded-lg bg-card space-y-2"
-                        >
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h4 className="font-bold text-lg">Bus {bus.PublishedLineName}</h4>
-                              <p className="text-sm text-muted-foreground">
-                                To: {bus.DestinationName}
-                              </p>
-                              <p className="text-sm">
-                                Vehicle: #{bus.VehicleNumber}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-bold text-primary">{bus.PresentableDistance}</p>
-                              <p className="text-sm text-muted-foreground">{bus.StopsFromCall} stops</p>
-                            </div>
-                          </div>
-                          
-                          <div className="grid grid-cols-2 gap-2 text-sm pt-2 border-t">
-                            <div>
-                              <p className="text-muted-foreground">Expected Arrival:</p>
-                              <p className="font-medium">{bus.ExpectedArrivalTime}</p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">Expected Departure:</p>
-                              <p className="font-medium">{bus.ExpectedDepartureTime}</p>
-                            </div>
-                          </div>
+                    <div>
+                      {liveBusData.MonitoredStopVisit.map((bus, index) => {
+                        // compute minutes and expected time
+                        let minutesAway = '';
+                        let expectedTimeOnly = '';
+                        if (bus.ExpectedArrivalTimeISO) {
+                          try {
+                            const expected = new Date(bus.ExpectedArrivalTimeISO);
+                            const diff = Math.max(0, Math.round((expected.getTime() - Date.now()) / 60000));
+                            minutesAway = diff === 0 ? 'Due' : `${diff} min`;
+                            const hh = String(expected.getHours()).padStart(2, '0');
+                            const mm = String(expected.getMinutes()).padStart(2, '0');
+                            const ss = String(expected.getSeconds()).padStart(2, '0');
+                            expectedTimeOnly = `${hh}:${mm}:${ss}`;
+                          } catch (e) {
+                            minutesAway = bus.PresentableDistance;
+                          }
+                        } else {
+                          minutesAway = bus.PresentableDistance;
+                          const maybe = (bus.ExpectedArrivalTime || '').split(' ');
+                          expectedTimeOnly = maybe.length > 1 ? maybe[1] : (maybe[0] || '');
+                        }
 
-                          {(bus.EstimatedPassengerCount > 0 || bus.EstimatedPassengerCapacity > 0) && (
-                            <div className="pt-2 border-t text-sm">
-                              <p className="text-muted-foreground">
-                                Capacity: {bus.EstimatedPassengerCount} / {bus.EstimatedPassengerCapacity} passengers
-                              </p>
-                            </div>
-                          )}
+                        const color = getBusRouteColor(bus.DestinationName || bus.PublishedLineName || '');
+                        const hex = color.replace('#','');
+                        const r = parseInt(hex.substring(0,2),16);
+                        const g = parseInt(hex.substring(2,4),16);
+                        const b = parseInt(hex.substring(4,6),16);
+                        const luminance = (0.299*r + 0.587*g + 0.114*b)/255;
+                        const textColor = luminance > 0.6 ? '#000' : '#fff';
+                        const status = bus.Monitored ? 'Tracked' : 'Not Tracked';
+                        const showCapacity = (bus.EstimatedPassengerCount || bus.EstimatedPassengerCapacity) && (bus.EstimatedPassengerCount > 0 || bus.EstimatedPassengerCapacity > 0);
 
-                          <div className="flex gap-2 pt-2 text-xs">
-                            <span className={`px-2 py-1 rounded ${bus.Monitored ? 'bg-green-500/20 text-green-700 dark:text-green-300' : 'bg-gray-500/20 text-gray-700 dark:text-gray-300'}`}>
-                              {bus.Monitored ? 'Tracked' : 'Not Tracked'}
-                            </span>
-                            {bus.StrollerVehicle && (
-                              <span className="px-2 py-1 rounded bg-blue-500/20 text-blue-700 dark:text-blue-300">
-                                Stroller Accessible
-                              </span>
-                            )}
+                        return (
+                          <div key={index} className="mb-1 rounded overflow-hidden" style={{ background: color }}>
+                            <div className="p-2" style={{ color: textColor }}>
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <div className="font-medium text-sm">Bus {bus.PublishedLineName} → {bus.DestinationName}</div>
+                                  <div className="text-[11px] opacity-90">Vehicle #{bus.VehicleNumber ?? bus.VehicleRef}</div>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span title={status}><Eye size={14} color={textColor} /></span>
+                                    {bus.StrollerVehicle && <span title="Stroller accessible"><StrollerIcon size={14} color={textColor} /></span>}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-lg font-semibold">{minutesAway}</div>
+                                  <div className="text-[11px] opacity-90">{bus.StopsFromCall} stops</div>
+                                </div>
+                              </div>
+                              <div className="flex justify-between items-center mt-1 text-[11px] opacity-90">
+                                <div>Expected: <span className="font-medium">{expectedTimeOnly}</span></div>
+                                <div>{showCapacity ? (<span>Capacity: <span className="font-medium">{bus.EstimatedPassengerCount} / {bus.EstimatedPassengerCapacity}</span></span>) : null}</div>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   ) : (
                     <div className="p-4 border rounded-lg text-center text-muted-foreground">
@@ -499,7 +673,163 @@ export default function BusPage() {
               )}
             </div>
           </TabsContent>
-        </Tabs>
+          </Tabs>
+        ) : (
+          <div className="mt-2">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="text-sm text-muted-foreground">Viewing</div>
+                    <h3 className="text-lg font-semibold">{selectedStop.name}</h3>
+                    <div className="text-sm text-muted-foreground">Stop ID: {selectedStop.id}</div>
+                    {liveBusData && (
+                      <div className="text-xs text-muted-foreground mt-1">Last updated: {liveBusData.DataReceivedTime || liveBusData.DataReceivedTimeISO || '—'}</div>
+                    )}
+              </div>
+              <div className="mt-3 sticky top-20 z-20 bg-background/0 py-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Button variant="outline" className="w-full" onClick={() => { setSelectedStop(null); setLiveBusData(null); setActiveTab('search'); }}>
+                    ← Back to search
+                  </Button>
+                  <Button variant="outline" className="w-full flex items-center justify-center gap-2" onClick={refreshLiveData} disabled={isLoadingLiveBus}>
+                    {isLoadingLiveBus ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                    <span>{isLoadingLiveBus ? 'Refreshing...' : 'Refresh'}</span>
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-1">
+              {isLoadingLiveBus ? (
+                <div className="text-sm p-2">Loading arrivals...</div>
+                ) : liveBusData ? (
+                liveBusData.MonitoredStopVisit.length > 0 ? (
+                  <div>
+                    {/* Route filter chips */}
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      <button className="text-xs px-2 py-1 rounded-full bg-muted text-foreground/90" onClick={() => setVisibleRoutes(Array.from(new Set(liveBusData.MonitoredStopVisit.map(m => m.PublishedLineName))))}>All</button>
+                      <button className="text-xs px-2 py-1 rounded-full bg-muted text-foreground/90" onClick={() => setVisibleRoutes([])}>Clear</button>
+                      {Array.from(new Set(liveBusData.MonitoredStopVisit.map(m => m.PublishedLineName))).map((route) => {
+                        const active = visibleRoutes == null ? true : visibleRoutes.includes(route)
+                        // derive color from a matching vehicle's destination (rush/limited info is often in destination)
+                        const matching = liveBusData.MonitoredStopVisit.find(m => m.PublishedLineName === route)
+                        const colorSource = matching ? (matching.DestinationName || matching.PublishedLineName) : route
+                        const color = getBusRouteColor(String(colorSource || ''))
+                          // compute readable text color for chip
+                          const hex = color.replace('#','')
+                          const rr = parseInt(hex.substring(0,2),16)
+                          const gg = parseInt(hex.substring(2,4),16)
+                          const bb = parseInt(hex.substring(4,6),16)
+                          const luminance = (0.299*rr + 0.587*gg + 0.114*bb)/255
+                          const chipTextColor = luminance > 0.6 ? '#000' : '#fff'
+                          return (
+                            <button
+                              key={route}
+                              onClick={() => {
+                                if (visibleRoutes == null) setVisibleRoutes([route])
+                                else if (visibleRoutes.includes(route)) setVisibleRoutes(visibleRoutes.filter(r => r !== route))
+                                else setVisibleRoutes([...visibleRoutes, route])
+                              }}
+                              className={`text-xs px-2 py-1 rounded-full border`}
+                              style={{ background: active ? color : undefined, color: active ? chipTextColor : undefined }}
+                            >
+                              {route}
+                            </button>
+                          )
+                        })}
+                    </div>
+
+                    {liveBusData.MonitoredStopVisit
+                      .filter(bus => {
+                        if (!visibleRoutes) return true
+                        if (visibleRoutes.length === 0) return false
+                        return visibleRoutes.includes(bus.PublishedLineName)
+                      })
+                      .map((bus, i) => {
+                      // compute minutes away and expected time-only (HH:MM:SS)
+                      let minutesAway = '';
+                      let expectedTimeOnly = '';
+                      if (bus.ExpectedArrivalTimeISO) {
+                        try {
+                          const expected = new Date(bus.ExpectedArrivalTimeISO);
+                          const diff = Math.max(0, Math.round((expected.getTime() - Date.now()) / 60000));
+                          minutesAway = diff === 0 ? 'Due' : `${diff} min`;
+                          const hh = String(expected.getHours()).padStart(2, '0');
+                          const mm = String(expected.getMinutes()).padStart(2, '0');
+                          const ss = String(expected.getSeconds()).padStart(2, '0');
+                          expectedTimeOnly = `${hh}:${mm}:${ss}`;
+                        } catch (e) {
+                          minutesAway = bus.PresentableDistance;
+                        }
+                      } else {
+                        minutesAway = bus.PresentableDistance;
+                        const maybe = (bus.ExpectedArrivalTime || '').split(' ');
+                        expectedTimeOnly = maybe.length > 1 ? maybe[1] : (maybe[0] || '');
+                      }
+
+                      // color based on route/destination
+                      const color = getBusRouteColor(bus.DestinationName || bus.PublishedLineName || '');
+
+                      // determine text color for contrast
+                      const hex = color.replace('#','');
+                      const r = parseInt(hex.substring(0,2),16);
+                      const g = parseInt(hex.substring(2,4),16);
+                      const b = parseInt(hex.substring(4,6),16);
+                      const luminance = (0.299*r + 0.587*g + 0.114*b)/255;
+                      const textColor = luminance > 0.6 ? '#000' : '#fff';
+
+                      const status = bus.Monitored ? 'Tracked' : 'Not Tracked';
+
+                      const compactPadding = compactMode ? 'p-2' : 'p-3';
+                      const titleClass = compactMode ? 'font-medium text-sm' : 'font-medium text-base';
+                      const vehicleClass = compactMode ? 'text-[11px] opacity-90' : 'text-xs opacity-90';
+                      const minutesClass = compactMode ? 'text-lg font-semibold' : 'text-xl font-bold';
+                      const showCapacity = (bus.EstimatedPassengerCount || bus.EstimatedPassengerCapacity) && (bus.EstimatedPassengerCount > 0 || bus.EstimatedPassengerCapacity > 0);
+
+                      return (
+                        <div key={i} className="mb-1 rounded overflow-hidden" style={{ background: color }}>
+                          <div className={`${compactPadding}`} style={{ color: textColor }}>
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <div className={titleClass}>{bus.PublishedLineName} → {bus.DestinationName}</div>
+                                <div className={vehicleClass}>Vehicle #{bus.VehicleNumber ?? bus.VehicleRef}</div>
+                                <div className="flex items-center gap-2 mt-1">
+                                  {bus.StrollerVehicle && (
+                                    <span title="Stroller accessible" style={{ color: textColor }}>
+                                      <StrollerIcon size={compactMode ? 14 : 16} color={textColor} />
+                                    </span>
+                                  )}
+                                  <span title={status}>
+                                    <Eye size={compactMode ? 14 : 16} color={textColor} />
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className={minutesClass}>{minutesAway}</div>
+                                <div className="text-[11px] opacity-90">{bus.StopsFromCall} stops</div>
+                              </div>
+                            </div>
+                            <div className={`flex justify-between items-center mt-1 text-[11px] opacity-90`}>
+                              <div>Expected: <span className="font-medium">{expectedTimeOnly}</span></div>
+                              <div>{showCapacity ? (<span>Capacity: <span className="font-medium">{bus.EstimatedPassengerCount} / {bus.EstimatedPassengerCapacity}</span></span>) : null}</div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground p-2">No upcoming buses</div>
+                )
+              ) : (
+                <div className="text-sm text-muted-foreground p-2">No live data. Use the list or the map to select a stop.</div>
+              )}
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

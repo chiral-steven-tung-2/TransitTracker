@@ -81,9 +81,13 @@ export interface MonitoredVehicleJourney {
   VehicleRef: string;
   VehicleNumber: string | null;
   AimedArrivalTime: string;
+  AimedArrivalTimeISO: string | null;
   ExpectedArrivalTime: string;
+  ExpectedArrivalTimeISO: string | null;
   AimedDepartureTime: string;
+  AimedDepartureTimeISO: string | null;
   ExpectedDepartureTime: string;
+  ExpectedDepartureTimeISO: string | null;
   PresentableDistance: string;
   DistanceFromCall: number;
   StopsFromCall: number;
@@ -95,6 +99,7 @@ export interface MonitoredVehicleJourney {
 
 export interface CleanedBusData {
   DataReceivedTime: string;
+  DataReceivedTimeISO: string | null;
   MonitoredStopVisit: MonitoredVehicleJourney[];
 }
 
@@ -149,6 +154,11 @@ function getEstimatedPassengerCapacity(monitoredVehicle: MonitoredVehicleJourney
 
 // Format monitored vehicle journey
 function formatMonitoredVehicleJourney(monitoredVehicle: MonitoredVehicleJourneyRaw): MonitoredVehicleJourney {
+  const aimedArrivalRaw = monitoredVehicle.MonitoredCall.AimedArrivalTime || null;
+  const expectedArrivalRaw = monitoredVehicle.MonitoredCall.ExpectedArrivalTime || null;
+  const aimedDepartureRaw = monitoredVehicle.MonitoredCall.AimedDepartureTime || null;
+  const expectedDepartureRaw = monitoredVehicle.MonitoredCall.ExpectedDepartureTime || null;
+
   return {
     PublishedLineName: monitoredVehicle.PublishedLineName,
     DestinationName: monitoredVehicle.DestinationName,
@@ -160,10 +170,14 @@ function formatMonitoredVehicleJourney(monitoredVehicle: MonitoredVehicleJourney
     ProgressRate: monitoredVehicle.ProgressRate,
     VehicleRef: monitoredVehicle.VehicleRef,
     VehicleNumber: getVehicleNumber(monitoredVehicle),
-    AimedArrivalTime: formatDateTime(monitoredVehicle.MonitoredCall.AimedArrivalTime),
-    ExpectedArrivalTime: formatDateTime(monitoredVehicle.MonitoredCall.ExpectedArrivalTime),
-    AimedDepartureTime: formatDateTime(monitoredVehicle.MonitoredCall.AimedDepartureTime),
-    ExpectedDepartureTime: formatDateTime(monitoredVehicle.MonitoredCall.ExpectedDepartureTime),
+    AimedArrivalTime: aimedArrivalRaw ? formatDateTime(aimedArrivalRaw) : '',
+    AimedArrivalTimeISO: aimedArrivalRaw,
+    ExpectedArrivalTime: expectedArrivalRaw ? formatDateTime(expectedArrivalRaw) : '',
+    ExpectedArrivalTimeISO: expectedArrivalRaw,
+    AimedDepartureTime: aimedDepartureRaw ? formatDateTime(aimedDepartureRaw) : '',
+    AimedDepartureTimeISO: aimedDepartureRaw,
+    ExpectedDepartureTime: expectedDepartureRaw ? formatDateTime(expectedDepartureRaw) : '',
+    ExpectedDepartureTimeISO: expectedDepartureRaw,
     PresentableDistance: monitoredVehicle.MonitoredCall.Extensions.Distances.PresentableDistance,
     DistanceFromCall: monitoredVehicle.MonitoredCall.Extensions.Distances.DistanceFromCall,
     StopsFromCall: monitoredVehicle.MonitoredCall.Extensions.Distances.StopsFromCall,
@@ -178,6 +192,7 @@ function formatMonitoredVehicleJourney(monitoredVehicle: MonitoredVehicleJourney
 export function cleanMTABusData(siriData: MTABusResponse): CleanedBusData {
   const responseTimestamp = siriData.Siri.ServiceDelivery.ResponseTimestamp;
   const responseTime = formatDateTime(responseTimestamp);
+  const responseTimeISO = responseTimestamp || null;
   const newMonitoredStopVisit: MonitoredVehicleJourney[] = [];
 
   if (
@@ -195,6 +210,7 @@ export function cleanMTABusData(siriData: MTABusResponse): CleanedBusData {
 
   return {
     DataReceivedTime: responseTime,
+    DataReceivedTimeISO: responseTimeISO,
     MonitoredStopVisit: newMonitoredStopVisit,
   };
 }
