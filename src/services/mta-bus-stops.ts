@@ -113,3 +113,152 @@ export const fetchBusStopsData = async (busRoute: string): Promise<CleanedBusSto
     throw error;
   }
 }
+
+// Interface for nearby stops response
+export interface NearbyStop {
+  id: string;
+  name: string;
+  code: string;
+  lat: number;
+  lon: number;
+  direction: string;
+  locationType: number;
+  routes: Array<{
+    id: string;
+    shortName: string;
+    longName: string;
+    description: string;
+  }>;
+  distance?: number; // distance in miles
+}
+
+// Fetch stops near a specific location (latitude, longitude)
+export const fetchStopsForLocation = async (
+  lat: number,
+  lon: number,
+  radius: number = 500, // radius in meters, default 500m
+  maxResults: number = 20
+): Promise<NearbyStop[]> => {
+  try {
+    // Convert radius (meters) to lat/lon span
+    // Use a minimum span of 0.005 (as per MTA API examples)
+    // For larger radius, scale proportionally
+    const baseSpan = 0.005;
+    const calculatedLatSpan = (radius / 111000) * 2;
+    const calculatedLonSpan = (radius / (111000 * Math.cos(lat * Math.PI / 180))) * 2;
+    
+    // Use the larger of base or calculated to ensure we get results
+    const latSpan = Math.max(baseSpan, calculatedLatSpan);
+    const lonSpan = Math.max(baseSpan, calculatedLonSpan);
+    
+    // MTA Bus Time API endpoint for stops near a location
+    const url = `/api/mta/api/where/stops-for-location.json?lat=${lat}&lon=${lon}&latSpan=${latSpan.toFixed(6)}&lonSpan=${lonSpan.toFixed(6)}&key=${MTA_API_KEY}`;
+    
+    console.log('Fetching stops from:', url);
+    console.log('Radius:', radius, 'meters, latSpan:', latSpan.toFixed(6), 'lonSpan:', lonSpan.toFixed(6));
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Network response was not ok: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log('API Response status:', data.code, 'currentTime:', data.currentTime);
+    console.log('Full data structure:', data);
+    console.log('data.data:', data.data);
+    console.log('data.data.stops:', data.data?.stops);
+    console.log('Number of stops in response:', data.data?.stops?.length || 0);
+    
+    if (!data.data) {
+      console.error('No data.data object in response!');
+      return [];
+    }
+    
+    if (!data.data.stops) {
+      console.error('No data.data.stops array in response!');
+      return [];
+    }
+    
+    if (data.data.stops.length === 0) {
+      console.log('data.data.stops is empty array');
+      return [];
+    }
+    
+    // Process and clean the data
+    console.log('Starting to process stops...');
+    const stopsBeforeFilter = data.data.stops;
+    console.log('Total stops before filtering:', stopsBeforeFilter.length);
+    console.log('First stop raw data:', stopsBeforeFilter[0]);
+    
+    const stops: NearbyStop[] = data.data.stops
+      .filter((stop: any) => {
+        const hasCoords = stop.lat && stop.lon;
+        if (!hasCoords) {
+          console.log(`Stop ${stop.id} missing coordinates - lat: ${stop.lat}, lon: ${stop.lon}`);
+        }
+        return hasCoords;
+      })
+      .map((stop: any) => {
+        const routes = (stop.routes || []).map((route: any) => ({
+          id: route.id || '',
+          shortName: route.shortName || '',
+          longName: route.longName || '',
+          description: route.description || ''
+        }));
+        const processedStop = {
+          id: stop.id,
+          name: stop.name,
+          code: stop.code || '',
+          lat: parseFloat(stop.lat),
+          lon: parseFloat(stop.lon),
+          direction: stop.direction || '',
+          locationType: stop.locationType || 0,
+          routes: routes
+        };
+        console.log('Processed stop:', processedStop.id, processedStop.name);
+        return processedStop;
+      });
+    
+    console.log(`Processed ${stops.length} stops with valid coordinates`);
+    console.log('First processed stop:', stops[0]);
+    
+    // Calculate distances and sort by distance
+    const stopsWithDistance = stops.map(stop => {
+      const distanceMeters = calculateDistance(lat, lon, stop.lat, stop.lon);
+      const distanceMiles = distanceMeters * 0.000621371; // Convert meters to miles
+      return { ...stop, distance: distanceMiles };
+    });
+    
+    console.log('Sample distances (miles):', stopsWithDistance.slice(0, 5).map(s => ({ id: s.id, distance: s.distance.toFixed(2) })));
+    
+    // Don't filter by radius here - let the API's latSpan/lonSpan handle the area
+    // Just sort by distance
+    stopsWithDistance.sort((a, b) => a.distance - b.distance);
+    
+    // Return up to maxResults with distance in miles
+    const result = stopsWithDistance.slice(0, maxResults);
+    
+    console.log(`Returning ${result.length} closest stops (requested max: ${maxResults})`);
+    
+    return result;
+  } catch (error) {
+    console.error('Fetching stops for location failed', error);
+    throw error;
+  }
+};
+
+// Helper function to calculate distance between two coordinates (Haversine formula)
+const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) *
+    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // Distance in meters
+};

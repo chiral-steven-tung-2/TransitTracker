@@ -1,4 +1,4 @@
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents } from 'react-leaflet'
 import { useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
@@ -8,15 +8,16 @@ import icon from 'leaflet/dist/images/marker-icon.png'
 import iconShadow from 'leaflet/dist/images/marker-shadow.png'
 import { useEffect, useState } from 'react'
 import { Button } from '../ui/button'
-import { Eye, RefreshCw } from 'lucide-react'
+import { Eye, RefreshCw, MapPin, X } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 
 import { fetchNYCTBusRoutesData, fetchBCBusRoutesData } from '../../services/mta-bus-routes'
 import type { CleanedRoutesData, RouteData } from '../../services/mta-bus-routes';
-import type { CleanedBusStopsData } from '../../services/mta-bus-stops';
+import type { CleanedBusStopsData, NearbyStop } from '../../services/mta-bus-stops';
 import { fetchMTABusData, type CleanedBusData } from '../../services/mta-live-bus';
 import { getCachedMTARouteGeometry, type RouteGeometry } from '../../services/mta-route-geometry';
+import { fetchStopsForLocation } from '../../services/mta-bus-stops';
 
 let DefaultIcon = L.icon({
   iconUrl: icon,
@@ -90,6 +91,30 @@ const createBusIcon = (color: string) => {
   })
 }
 
+// Create a pin icon for user-selected location
+const createPinIcon = () => {
+  return L.divIcon({
+    className: 'pin-div-icon',
+    html: `
+      <div style="
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      ">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#ef4444" stroke="white" stroke-width="2"/>
+          <circle cx="12" cy="9" r="2.5" fill="white"/>
+        </svg>
+      </div>
+    `,
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -32]
+  })
+}
+
 // Inline stroller SVG for a clearer stroller icon (small and single-color)
 function StrollerIcon({ size = 16, color = '#000' }: { size?: number; color?: string }) {
   return (
@@ -125,8 +150,34 @@ export default function BusPage() {
   const [selectedRoute, setSelectedRoute] = useState<string>('')
   const [availableRoutes, setAvailableRoutes] = useState<RouteData[]>([])
   const [activeTab, setActiveTab] = useState<string>('search')
+  const [lastActiveTab, setLastActiveTab] = useState<string>('search')
   const [hasLoadedRoutes, setHasLoadedRoutes] = useState<boolean>(false)
   const [busStopsData, setBusStopsData] = useState<CleanedBusStopsData | null>(null)
+
+  // Clear map markers when switching tabs
+  useEffect(() => {
+    if (activeTab === 'search') {
+      // Keep search tab data (busStopsData)
+      // Clear closest tab data
+      setPinnedLocation(null)
+      setNearbyStops([])
+      setNearbyStopsLiveData(new Map())
+      setLoadingStopIds(new Set())
+    } else if (activeTab === 'closest') {
+      // Keep closest tab data
+      // Clear search tab data
+      setBusStopsData(null)
+      setSelectedRoute('')
+    } else if (activeTab === 'stopid') {
+      // Clear both when going to stop id tab
+      setBusStopsData(null)
+      setSelectedRoute('')
+      setPinnedLocation(null)
+      setNearbyStops([])
+      setNearbyStopsLiveData(new Map())
+      setLoadingStopIds(new Set())
+    }
+  }, [activeTab])
   const [isLoadingStops, setIsLoadingStops] = useState(false)
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false)
   const [liveBusData, setLiveBusData] = useState<CleanedBusData | null>(null)
@@ -144,6 +195,14 @@ export default function BusPage() {
   const [visibleRoutes, setVisibleRoutes] = useState<string[] | null>(null)
   // compact mode is default and fixed
   const compactMode = true
+
+  // State for "Closest" tab - nearby stops functionality
+  const [pinnedLocation, setPinnedLocation] = useState<{ lat: number; lon: number } | null>(null)
+  const [nearbyStops, setNearbyStops] = useState<NearbyStop[]>([])
+  const [isLoadingNearby, setIsLoadingNearby] = useState(false)
+  const [searchRadius, setSearchRadius] = useState<number>(500) // in meters
+  const [nearbyStopsLiveData, setNearbyStopsLiveData] = useState<Map<string, CleanedBusData>>(new Map())
+  const [loadingStopIds, setLoadingStopIds] = useState<Set<string>>(new Set())
 
   // Check for dark mode
   useEffect(() => {
@@ -262,10 +321,76 @@ export default function BusPage() {
     return null
   }
 
+  // Component to handle map clicks for pinning locations (only active in "Closest" tab)
+  function MapClickHandler() {
+    useMapEvents({
+      click: async (e) => {
+        if (activeTab === 'closest') {
+          const { lat, lng } = e.latlng
+          setPinnedLocation({ lat, lon: lng })
+          
+          // Fetch nearby stops
+          setIsLoadingNearby(true)
+          setNearbyStops([])
+          setNearbyStopsLiveData(new Map())
+          try {
+            const stops = await fetchStopsForLocation(lat, lng, searchRadius, 20)
+            setNearbyStops(stops)
+            console.log('Nearby stops:', stops)
+            
+            // Fetch live data for all stops
+            if (stops.length > 0) {
+              fetchLiveDataForNearbyStops(stops)
+            }
+          } catch (error) {
+            console.error('Error fetching nearby stops:', error)
+          } finally {
+            setIsLoadingNearby(false)
+          }
+        }
+      }
+    })
+    return null
+  }
+
+  // Fetch live data for all nearby stops
+  const fetchLiveDataForNearbyStops = async (stops: NearbyStop[]) => {
+    const newLiveData = new Map<string, CleanedBusData>()
+    const loading = new Set<string>()
+    
+    for (const stop of stops) {
+      loading.add(stop.id)
+      setLoadingStopIds(new Set(loading))
+      
+      try {
+        const data = await fetchMTABusData(stop.id)
+        if (data && data.MonitoredStopVisit.length > 0) {
+          newLiveData.set(stop.id, data)
+          setNearbyStopsLiveData(new Map(newLiveData))
+        }
+      } catch (error) {
+        console.error(`Error fetching live data for stop ${stop.id}:`, error)
+      } finally {
+        loading.delete(stop.id)
+        setLoadingStopIds(new Set(loading))
+      }
+    }
+  }
+
+  // Clear pinned location and nearby stops
+  const clearPinnedLocation = () => {
+    setPinnedLocation(null)
+    setNearbyStops([])
+    setNearbyStopsLiveData(new Map())
+    setLoadingStopIds(new Set())
+  }
+
   // using lucide-react icons (Wheelchair for stroller, Eye for tracked)
 
   // Select a stop: center map and fetch live arrivals for that stop
   const handleSelectStop = async (stop: { id: string; name: string; latitude: number; longitude: number }) => {
+    // Save the current tab before switching to stop view
+    setLastActiveTab(activeTab)
     setSelectedStop(stop)
     // center map on the selected stop
     if (map) {
@@ -349,6 +474,7 @@ export default function BusPage() {
           scrollWheelZoom={true}
         >
           <MapSetter />
+          <MapClickHandler />
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url={
@@ -444,6 +570,56 @@ export default function BusPage() {
               </>
             );
           })()}
+
+          {/* Pinned location marker and nearby stops (for "Closest" tab) */}
+          {pinnedLocation && (
+            <>
+              {/* Pin marker */}
+              <Marker 
+                position={[pinnedLocation.lat, pinnedLocation.lon]}
+                icon={createPinIcon()}
+              >
+                <Popup>
+                  <div>
+                    <strong>Pinned Location</strong>
+                    <br />
+                    Lat: {pinnedLocation.lat.toFixed(6)}
+                    <br />
+                    Lon: {pinnedLocation.lon.toFixed(6)}
+                  </div>
+                </Popup>
+              </Marker>
+
+              {/* Nearby stop markers */}
+              {nearbyStops.map((stop) => (
+                <Marker 
+                  key={stop.id} 
+                  position={[stop.lat, stop.lon]}
+                  icon={createCustomIcon('#3b82f6')}
+                  eventHandlers={{
+                    click: () => handleSelectStop({ 
+                      id: stop.id, 
+                      name: stop.name, 
+                      latitude: stop.lat, 
+                      longitude: stop.lon 
+                    })
+                  }}
+                >
+                  <Popup>
+                    <div>
+                      <strong>{stop.name}</strong>
+                      <br />
+                      ID: {stop.id}
+                      <br />
+                      Code: {stop.code}
+                      <br />
+                      Routes: {stop.routes.map(r => r.shortName).join(', ')}
+                    </div>
+                  </Popup>
+                </Marker>
+              ))}
+            </>
+          )}
         </MapContainer>
       </div>
 
@@ -467,7 +643,7 @@ export default function BusPage() {
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="search">Search</TabsTrigger>
             <TabsTrigger value="closest">Closest</TabsTrigger>
-            <TabsTrigger value="test">Test Live</TabsTrigger>
+            <TabsTrigger value="stopid">Stop ID</TabsTrigger>
           </TabsList>
 
           <TabsContent value="search" className="mt-4">
@@ -547,10 +723,10 @@ export default function BusPage() {
                 </div>
 
                 <div className="border rounded-lg p-4">
-                  <h2 className="text-lg font-semibold mb-3">
+                  <h2 className="text-sm font-semibold mb-3">
                     Route: {busStopsData.route}
                   </h2>
-                  <h3 className="font-medium mb-2">
+                  <h3 className="text-sm font-medium mb-2">
                     {selectedDirection === '0' ? busStopsData.zeroDirDest : busStopsData.oneDirDest}
                   </h3>
                   <p className="text-sm text-muted-foreground mb-3">
@@ -573,40 +749,288 @@ export default function BusPage() {
             )}
           </TabsContent>
           <TabsContent value="closest" className="mt-4">
-            <p className="text-muted-foreground">In the Closest view</p>
+            <div className="space-y-4">
+              <div className="border rounded-lg p-4">
+                <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                  <MapPin className="w-5 h-5" />
+                  Find Nearby Stops
+                </h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Click anywhere on the map to pin a location and find the closest bus stops.
+                </p>
+                
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Search Radius</label>
+                    <Select 
+                      value={searchRadius.toString()} 
+                      onValueChange={(value) => setSearchRadius(parseInt(value))}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="250">0.15 miles (250m)</SelectItem>
+                        <SelectItem value="500">0.3 miles (500m)</SelectItem>
+                        <SelectItem value="750">0.5 miles (750m)</SelectItem>
+                        <SelectItem value="1000">0.6 miles (1km)</SelectItem>
+                        <SelectItem value="1500">0.9 miles (1.5km)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {pinnedLocation && (
+                    <div className="flex items-center justify-between p-3 bg-muted rounded-md">
+                      <div className="text-sm">
+                        <div className="font-medium">Pinned Location</div>
+                        <div className="text-muted-foreground">
+                          {pinnedLocation.lat.toFixed(6)}, {pinnedLocation.lon.toFixed(6)}
+                        </div>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={clearPinnedLocation}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {isLoadingNearby && (
+                <div className="text-center p-4">
+                  <div className="text-sm text-muted-foreground">Searching for nearby stops...</div>
+                </div>
+              )}
+
+              {!isLoadingNearby && nearbyStops.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="font-semibold text-sm">
+                    Found {nearbyStops.length} stops nearby
+                  </h4>
+                  <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                    {nearbyStops.map((stop) => {
+                      const liveData = nearbyStopsLiveData.get(stop.id)
+                      const isLoading = loadingStopIds.has(stop.id)
+                      
+                      return (
+                        <div 
+                          key={stop.id}
+                          className="border rounded-lg overflow-hidden"
+                        >
+                          {/* Stop Header */}
+                          <div 
+                            className="p-3 bg-muted cursor-pointer hover:bg-muted/80 transition-colors"
+                            onClick={() => handleSelectStop({ 
+                              id: stop.id, 
+                              name: stop.name, 
+                              latitude: stop.lat, 
+                              longitude: stop.lon 
+                            })}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="font-medium text-sm">{stop.name}</div>
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  Stop ID: {stop.id} {stop.code && `• Code: ${stop.code}`}
+                                </div>
+                              </div>
+                              {stop.distance !== undefined && (
+                                <div className="text-xs font-medium bg-background px-2 py-1 rounded ml-2 whitespace-nowrap">
+                                  {stop.distance < 0.1 
+                                    ? `${Math.round(stop.distance * 5280)} ft`
+                                    : `${stop.distance.toFixed(2)} mi`
+                                  }
+                                </div>
+                              )}
+                            </div>
+                            {stop.routes.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                {stop.routes.map((route, idx) => (
+                                  <span 
+                                    key={idx}
+                                    className="px-2 py-0.5 bg-primary text-primary-foreground rounded text-xs font-medium"
+                                  >
+                                    {route.shortName}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Live Arrivals */}
+                          <div className="p-3 bg-card">
+                            {isLoading && (
+                              <div className="text-xs text-muted-foreground">
+                                Loading arrivals...
+                              </div>
+                            )}
+                            
+                            {!isLoading && liveData && liveData.MonitoredStopVisit.length > 0 && (
+                              <div className="space-y-1">
+                                <div className="text-xs font-medium text-muted-foreground mb-2">
+                                  Next arrivals:
+                                </div>
+                                {liveData.MonitoredStopVisit.slice(0, 3).map((bus, idx) => {
+                                  let minutesAway = '';
+                                  if (bus.ExpectedArrivalTimeISO) {
+                                    try {
+                                      const expected = new Date(bus.ExpectedArrivalTimeISO);
+                                      const diff = Math.max(0, Math.round((expected.getTime() - Date.now()) / 60000));
+                                      minutesAway = diff === 0 ? 'Due' : `${diff} min`;
+                                    } catch (e) {
+                                      minutesAway = bus.PresentableDistance;
+                                    }
+                                  } else {
+                                    minutesAway = bus.PresentableDistance;
+                                  }
+
+                                  const color = getBusRouteColor(bus.DestinationName || bus.PublishedLineName || '');
+                                  const hex = color.replace('#','');
+                                  const r = parseInt(hex.substring(0,2),16);
+                                  const g = parseInt(hex.substring(2,4),16);
+                                  const b = parseInt(hex.substring(4,6),16);
+                                  const luminance = (0.299*r + 0.587*g + 0.114*b)/255;
+                                  const textColor = luminance > 0.6 ? '#000' : '#fff';
+
+                                  return (
+                                    <div 
+                                      key={idx} 
+                                      className="flex items-center justify-between p-2 rounded text-xs"
+                                      style={{ backgroundColor: color, color: textColor }}
+                                    >
+                                      <div>
+                                        <div className="font-medium">
+                                          {bus.PublishedLineName} → {bus.DestinationName}
+                                        </div>
+                                        <div className="opacity-75 text-[10px]">
+                                          {bus.StopsFromCall} stops away
+                                        </div>
+                                      </div>
+                                      <div className="font-bold text-sm">
+                                        {minutesAway}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                            
+                            {!isLoading && (!liveData || liveData.MonitoredStopVisit.length === 0) && (
+                              <div className="text-xs text-muted-foreground">
+                                No upcoming buses
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {!isLoadingNearby && pinnedLocation && nearbyStops.length === 0 && (
+                <div className="text-center p-4 text-sm text-muted-foreground">
+                  No bus stops found within {searchRadius}m of the pinned location.
+                  Try increasing the search radius.
+                </div>
+              )}
+
+              {!pinnedLocation && !isLoadingNearby && (
+                <div className="text-center p-8 text-sm text-muted-foreground">
+                  👆 Click on the map to start
+                </div>
+              )}
+            </div>
           </TabsContent>
-          <TabsContent value="test" className="mt-4">
+          <TabsContent value="stopid" className="mt-4">
             <div className="space-y-4">
               <div>
-                <label className="text-sm font-medium mb-2 block">Test Stop ID</label>
+                <label className="text-sm font-medium mb-2 block">Stop ID</label>
                 <input
                   type="text"
                   value={testStopId}
                   onChange={(e) => setTestStopId(e.target.value)}
-                  placeholder="Enter stop ID (e.g., 502185)"
+                  placeholder="Enter stop ID (e.g., MTA_502185)"
                   className="w-full px-3 py-2 border rounded-md bg-background"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && testStopId) {
+                      handleTestLiveBus()
+                    }
+                  }}
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Tip: Stop IDs can be found on bus stop signs or from the other search methods
+                </p>
               </div>
+              
               <Button 
                 onClick={handleTestLiveBus}
                 disabled={isLoadingLiveBus || !testStopId}
-                className="w-full"
+                className="w-full bg-blue-600 hover:bg-blue-700"
               >
-                {isLoadingLiveBus ? 'Loading...' : 'Fetch Live Bus Data'}
+                {isLoadingLiveBus ? 'Loading...' : 'Search'}
               </Button>
+            </div>
 
-              {liveBusData && (
-                <div className="mt-6 space-y-4">
-                  <div className="p-4 border rounded-lg bg-card">
-                            <h3 className="font-semibold text-lg mb-2">Live arrivals</h3>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Found {liveBusData.MonitoredStopVisit.length} buses
-                    </p>
+            {liveBusData && (
+              <div className="mt-4">
+                {/* Stop Information */}
+                <h3 className="font-semibold text-sm mb-2">Stop Information</h3>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Stop ID:</span>
+                    <span className="font-medium">{testStopId}</span>
                   </div>
+                  {liveBusData.MonitoredStopVisit.length > 0 && (
+                    <>
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Routes:</span>
+                        <div className="flex flex-wrap gap-1 justify-end max-w-[65%]">
+                          {Array.from(new Set(liveBusData.MonitoredStopVisit.map(m => m.PublishedLineName))).sort().map((route, idx) => {
+                            // Find a bus with this route to get destination info for color
+                            const busWithRoute = liveBusData.MonitoredStopVisit.find(m => m.PublishedLineName === route);
+                            const color = getBusRouteColor(busWithRoute?.DestinationName || route);
+                            const hex = color.replace('#','');
+                            const r = parseInt(hex.substring(0,2),16);
+                            const g = parseInt(hex.substring(2,4),16);
+                            const b = parseInt(hex.substring(4,6),16);
+                            const luminance = (0.299*r + 0.587*g + 0.114*b)/255;
+                            const textColor = luminance > 0.6 ? '#000' : '#fff';
+                            
+                            return (
+                              <span 
+                                key={idx}
+                                className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                style={{ backgroundColor: color, color: textColor }}
+                              >
+                                {route}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Buses:</span>
+                        <span className="font-medium">{liveBusData.MonitoredStopVisit.length}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Updated:</span>
+                        <span className="font-medium">
+                          {new Date(liveBusData.DataReceivedTimeISO || liveBusData.DataReceivedTime || '').toLocaleTimeString() || '—'}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
 
-                  {liveBusData.MonitoredStopVisit.length > 0 ? (
-                    <div>
-                      {liveBusData.MonitoredStopVisit.map((bus, index) => {
+                {/* Bus Arrivals List */}
+                {liveBusData.MonitoredStopVisit.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold mb-2">Upcoming Arrivals</h3>
+                    {liveBusData.MonitoredStopVisit.map((bus, index) => {
                         // compute minutes and expected time
                         let minutesAway = '';
                         let expectedTimeOnly = '';
@@ -663,15 +1087,16 @@ export default function BusPage() {
                           </div>
                         )
                       })}
-                    </div>
-                  ) : (
-                    <div className="p-4 border rounded-lg text-center text-muted-foreground">
-                      No buses currently serving this stop
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {liveBusData && liveBusData.MonitoredStopVisit.length === 0 && (
+              <div className="mt-6 text-sm text-center text-muted-foreground">
+                No buses currently serving this stop
+              </div>
+            )}
           </TabsContent>
           </Tabs>
         ) : (
@@ -681,14 +1106,26 @@ export default function BusPage() {
                 <div className="text-sm text-muted-foreground">Viewing</div>
                     <h3 className="text-lg font-semibold">{selectedStop.name}</h3>
                     <div className="text-sm text-muted-foreground">Stop ID: {selectedStop.id}</div>
+                    {liveBusData && liveBusData.MonitoredStopVisit.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {Array.from(new Set(liveBusData.MonitoredStopVisit.map(m => m.PublishedLineName))).sort().map((route, idx) => (
+                          <span 
+                            key={idx}
+                            className="px-2 py-0.5 bg-primary text-primary-foreground rounded text-xs font-medium"
+                          >
+                            {route}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {liveBusData && (
                       <div className="text-xs text-muted-foreground mt-1">Last updated: {liveBusData.DataReceivedTime || liveBusData.DataReceivedTimeISO || '—'}</div>
                     )}
               </div>
               <div className="mt-3 sticky top-20 z-20 bg-background/0 py-2">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <Button variant="outline" className="w-full" onClick={() => { setSelectedStop(null); setLiveBusData(null); setActiveTab('search'); }}>
-                    ← Back to search
+                  <Button variant="outline" className="w-full" onClick={() => { setSelectedStop(null); setLiveBusData(null); setActiveTab(lastActiveTab); }}>
+                    ← Back
                   </Button>
                   <Button variant="outline" className="w-full flex items-center justify-center gap-2" onClick={refreshLiveData} disabled={isLoadingLiveBus}>
                     {isLoadingLiveBus ? (
