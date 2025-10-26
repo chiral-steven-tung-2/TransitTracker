@@ -1,4 +1,4 @@
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet-routing-machine/dist/leaflet-routing-machine.css'
 import L from 'leaflet'
@@ -16,6 +16,11 @@ import { Check, ChevronsUpDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { getSbuBusRoutes, getNextBusForRoute, type SbuRoute, type NextBusInfo } from '../../services/sbu-bus-service'
 import { getCachedRouteGeometry, type RouteGeometry } from '../../services/route-geometry'
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from '../ui/resizable'
 
 let DefaultIcon = L.icon({
   iconUrl: icon,
@@ -56,6 +61,34 @@ const createCustomIcon = (color: string) => {
   })
 }
 
+// Component to handle map resize when panel size changes
+function MapResizeHandler() {
+  const map = useMap();
+  
+  React.useEffect(() => {
+    const handleResize = () => {
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 0);
+    };
+
+    // Listen for resize events
+    window.addEventListener('resize', handleResize);
+    
+    // Also check periodically for container size changes (for panel resizing)
+    const interval = setInterval(() => {
+      map.invalidateSize();
+    }, 100);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearInterval(interval);
+    };
+  }, [map]);
+
+  return null;
+}
+
 export default function SbuBusPage() {
   // Default center (Stony Brook University)
   const defaultCenter: [number, number] = [40.9124, -73.1237]
@@ -69,6 +102,7 @@ export default function SbuBusPage() {
   const [returnGeometries, setReturnGeometries] = useState<Map<string, RouteGeometry>>(new Map())
   const [visibleRoutes, setVisibleRoutes] = useState<Set<string>>(new Set())
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false)
+  const [isMobile, setIsMobile] = useState<boolean>(false)
   const [openRouteCombobox, setOpenRouteCombobox] = useState(false)
   const [openStopCombobox, setOpenStopCombobox] = useState(false)
 
@@ -89,6 +123,18 @@ export default function SbuBusPage() {
     })
     
     return () => observer.disconnect()
+  }, [])
+
+  // Check for mobile screen size
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024) // lg breakpoint
+    }
+    
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    
+    return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
   // Load routes on mount
@@ -223,24 +269,27 @@ export default function SbuBusPage() {
   }, [activeTab, selectedStop, routesAtSelectedStop, routeGeometries, returnGeometries])
 
   return (
-    <div className="flex flex-col lg:flex-row w-full" style={{ height: 'calc(100vh - 73px)' }}>
-      {/* Map - Top on mobile, Left on desktop */}
-      <div className="w-full lg:w-1/2 h-[50vh] lg:h-full order-1 lg:order-1 relative z-0">
-        <MapContainer
-          center={defaultCenter}
-          zoom={14}
-          style={{ width: '100%', height: '100%' }}
-          scrollWheelZoom={true}
-        >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url={
-              isDarkMode
-                ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-                : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-            }
-            key={isDarkMode ? 'dark' : 'light'}
-          />
+    <div className="w-full" style={{ height: 'calc(100vh - 73px)' }}>
+      <ResizablePanelGroup direction={isMobile ? "vertical" : "horizontal"} className="h-full">
+        {/* Map Panel */}
+        <ResizablePanel defaultSize={50} minSize={20}>
+          <div className="w-full h-full relative z-0">
+            <MapContainer
+              center={defaultCenter}
+              zoom={14}
+              style={{ width: '100%', height: '100%' }}
+              scrollWheelZoom={true}
+            >
+              <MapResizeHandler />
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url={
+                  isDarkMode
+                    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+                    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+                }
+                key={isDarkMode ? 'dark' : 'light'}
+              />
           
           {/* Display route markers and line for "Search by Route" tab */}
           {activeTab === 'route' && currentRoute && currentRoute.stops.map((stop, index) => (
@@ -309,23 +358,27 @@ export default function SbuBusPage() {
             </React.Fragment>
           ))}
         </MapContainer>
-      </div>
+          </div>
+        </ResizablePanel>
 
-      {/* Content - Bottom on mobile, Right on desktop */}
-      <div className="w-full lg:w-1/2 h-[50vh] lg:h-full p-4 lg:p-8 bg-background overflow-y-auto order-2 lg:order-2 relative z-10">
-        <h1 className="text-2xl font-bold mb-4">SBU Bus</h1>
-        
-        {/* Tabs for Search by Route or Stop */}
-        <Tabs defaultValue="route" className="w-full" value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2 mb-6">
-            <TabsTrigger value="route">Search by Route</TabsTrigger>
-            <TabsTrigger value="stop">Search by Stop</TabsTrigger>
-          </TabsList>
+        <ResizableHandle withHandle />
 
-          {/* Search by Route Tab */}
-          <TabsContent value="route">
-            {/* Route Selector */}
-            <div className="mb-6">
+        {/* Content Panel */}
+        <ResizablePanel defaultSize={50} minSize={30}>
+          <div className="h-full p-4 lg:p-8 bg-background overflow-y-auto relative z-10">
+            <h1 className="text-2xl font-bold mb-4">SBU Bus</h1>
+            
+            {/* Tabs for Search by Route or Stop */}
+            <Tabs defaultValue="route" className="w-full" value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="route">Search by Route</TabsTrigger>
+                <TabsTrigger value="stop">Search by Stop</TabsTrigger>
+              </TabsList>
+
+              {/* Search by Route Tab */}
+              <TabsContent value="route">
+                {/* Route Selector */}
+                <div className="mb-6">
               <label className="block text-sm font-medium mb-2">Select Route</label>
               <Popover open={openRouteCombobox} onOpenChange={setOpenRouteCombobox}>
                 <PopoverTrigger asChild>
@@ -580,7 +633,9 @@ export default function SbuBusPage() {
             )}
           </TabsContent>
         </Tabs>
-      </div>
+          </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   )
 }

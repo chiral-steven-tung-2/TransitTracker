@@ -11,6 +11,11 @@ import { Button } from '../ui/button'
 import { Eye, RefreshCw, MapPin, X } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from '../ui/resizable'
 
 import { fetchNYCTBusRoutesData, fetchBCBusRoutesData } from '../../services/mta-bus-routes'
 import type { CleanedRoutesData, RouteData } from '../../services/mta-bus-routes';
@@ -89,6 +94,34 @@ const createBusIcon = (color: string) => {
     iconAnchor: [14, 9],
     popupAnchor: [0, -9]
   })
+}
+
+// Component to handle map resize when panel size changes
+function MapResizeHandler() {
+  const map = useMap();
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 0);
+    };
+
+    // Listen for resize events
+    window.addEventListener('resize', handleResize);
+    
+    // Also check periodically for container size changes (for panel resizing)
+    const interval = setInterval(() => {
+      map.invalidateSize();
+    }, 100);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearInterval(interval);
+    };
+  }, [map]);
+
+  return null;
 }
 
 // Create a pin icon for user-selected location
@@ -180,6 +213,7 @@ export default function BusPage() {
   }, [activeTab])
   const [isLoadingStops, setIsLoadingStops] = useState(false)
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false)
+  const [isMobile, setIsMobile] = useState<boolean>(false)
   const [liveBusData, setLiveBusData] = useState<CleanedBusData | null>(null)
   const [isLoadingLiveBus, setIsLoadingLiveBus] = useState(false)
   const [testStopId, setTestStopId] = useState<string>('502185')
@@ -221,6 +255,18 @@ export default function BusPage() {
     })
     
     return () => observer.disconnect()
+  }, [])
+
+  // Check for mobile screen size
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024) // lg breakpoint
+    }
+    
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    
+    return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
   // Only load routes data once, when Search tab is selected for the first time
@@ -464,20 +510,23 @@ export default function BusPage() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row w-full" style={{ height: 'calc(100vh - 73px)' }}>
-      {/* Map - Top on mobile, Left on desktop */}
-      <div className="w-full lg:w-1/2 h-[50vh] lg:h-full order-1 lg:order-1 relative z-0">
-        <MapContainer
-          center={defaultCenter}
-          zoom={12}
-          style={{ width: '100%', height: '100%' }}
-          scrollWheelZoom={true}
-        >
-          <MapSetter />
-          <MapClickHandler />
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url={
+    <div className="w-full" style={{ height: 'calc(100vh - 73px)' }}>
+      <ResizablePanelGroup direction={isMobile ? "vertical" : "horizontal"} className="h-full">
+        {/* Map Panel */}
+        <ResizablePanel defaultSize={50} minSize={20}>
+          <div className="w-full h-full relative z-0">
+            <MapContainer
+              center={defaultCenter}
+              zoom={12}
+              style={{ width: '100%', height: '100%' }}
+              scrollWheelZoom={true}
+            >
+              <MapSetter />
+              <MapClickHandler />
+              <MapResizeHandler />
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url={
               isDarkMode
                 ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
                 : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
@@ -621,21 +670,23 @@ export default function BusPage() {
             </>
           )}
         </MapContainer>
-      </div>
-
-      {/* Content - Bottom on mobile, Right on desktop */}
-      <div className="w-full lg:w-1/2 h-[50vh] lg:h-full p-4 lg:p-8 bg-background overflow-y-auto order-2 lg:order-2 relative z-10">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-lg font-semibold text-foreground">Bus Time</h1>
-            <p className="text-sm text-muted-foreground">Live arrivals & vehicle locations</p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="text-xs bg-muted rounded-full px-2 py-1 text-foreground/80">Auto-refresh: 30s</div>
-          </div>
-        </div>
+        </ResizablePanel>
 
-        
+        <ResizableHandle withHandle />
+
+        {/* Content Panel */}
+        <ResizablePanel defaultSize={50} minSize={30}>
+          <div className="h-full p-4 lg:p-8 bg-background overflow-y-auto relative z-10">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h1 className="text-lg font-semibold text-foreground">Bus Time</h1>
+                <p className="text-sm text-muted-foreground">Live arrivals & vehicle locations</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="text-xs bg-muted rounded-full px-2 py-1 text-foreground/80">Auto-refresh: 30s</div>
+              </div>
+            </div>
 
         {/* If a stop is selected show the viewing panel only; otherwise show Tabs/search UI */}
         {!selectedStop ? (
@@ -1269,7 +1320,9 @@ export default function BusPage() {
           </div>
         )}
 
-      </div>
+          </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   )
 }
