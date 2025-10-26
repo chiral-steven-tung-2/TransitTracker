@@ -192,7 +192,6 @@ export default function BusPage() {
     latitude: number
     longitude: number
   } | null>(null)
-  const [visibleRoutes, setVisibleRoutes] = useState<string[] | null>(null)
   // compact mode is default and fixed
   const compactMode = true
 
@@ -203,6 +202,7 @@ export default function BusPage() {
   const [searchRadius, setSearchRadius] = useState<number>(500) // in meters
   const [nearbyStopsLiveData, setNearbyStopsLiveData] = useState<Map<string, CleanedBusData>>(new Map())
   const [loadingStopIds, setLoadingStopIds] = useState<Set<string>>(new Set())
+  const [filteredRoutes, setFilteredRoutes] = useState<Set<string>>(new Set())
 
   // Check for dark mode
   useEffect(() => {
@@ -392,6 +392,7 @@ export default function BusPage() {
     // Save the current tab before switching to stop view
     setLastActiveTab(activeTab)
     setSelectedStop(stop)
+    setFilteredRoutes(new Set()) // Reset filters when selecting a new stop
     // center map on the selected stop
     if (map) {
       try {
@@ -427,6 +428,18 @@ export default function BusPage() {
     }
   }
 
+  const toggleRouteFilter = (routeId: string) => {
+    setFilteredRoutes(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(routeId)) {
+        newSet.delete(routeId);
+      } else {
+        newSet.add(routeId);
+      }
+      return newSet;
+    });
+  }
+
   // Auto-refresh every 30 seconds while viewing a stop
   useEffect(() => {
     if (!selectedStop) return
@@ -435,19 +448,6 @@ export default function BusPage() {
     }, 30000)
     return () => clearInterval(id)
   }, [selectedStop])
-
-  // Derive list of unique routes from live data when it changes (only on first load, not on refresh)
-  useEffect(() => {
-    if (!liveBusData || !liveBusData.MonitoredStopVisit.length) {
-      setVisibleRoutes(null)
-      return
-    }
-    // Only set visibleRoutes if it's currently null (initial load), preserve user selection on refresh
-    if (visibleRoutes === null) {
-      const unique = Array.from(new Set(liveBusData.MonitoredStopVisit.map(m => m.PublishedLineName))).filter(Boolean) as string[]
-      setVisibleRoutes(unique)
-    }
-  }, [liveBusData])
 
   const handleTestLiveBus = async () => {
     setIsLoadingLiveBus(true);
@@ -544,8 +544,8 @@ export default function BusPage() {
                 {/* Live vehicle markers (if live data present and for this stop) */}
                 {liveBusData && liveBusData.MonitoredStopVisit.length > 0 && liveBusData.MonitoredStopVisit.map((mvj, idx) => {
                   // use color based on route/destination
-                  // filter by visible routes if set
-                  if (visibleRoutes && visibleRoutes.length > 0 && !visibleRoutes.includes(mvj.PublishedLineName)) return null;
+                  // filter by filtered routes if set
+                  if (filteredRoutes.size > 0 && !filteredRoutes.has(mvj.PublishedLineName)) return null;
                   const vColor = getBusRouteColor(mvj.DestinationName || mvj.PublishedLineName || '');
                   // ensure coords
                   if (!mvj.Latitude || !mvj.Longitude) return null;
@@ -1105,17 +1105,53 @@ export default function BusPage() {
               <div>
                 <div className="text-sm text-muted-foreground">Viewing</div>
                     <h3 className="text-lg font-semibold">{selectedStop.name}</h3>
-                    <div className="text-sm text-muted-foreground">Stop ID: {selectedStop.id}</div>
+                    <div className="text-sm text-muted-foreground mb-3">Stop ID: {selectedStop.id}</div>
                     {liveBusData && liveBusData.MonitoredStopVisit.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {Array.from(new Set(liveBusData.MonitoredStopVisit.map(m => m.PublishedLineName))).sort().map((route, idx) => (
-                          <span 
-                            key={idx}
-                            className="px-2 py-0.5 bg-primary text-primary-foreground rounded text-xs font-medium"
-                          >
-                            {route}
-                          </span>
-                        ))}
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          Filter by Route {filteredRoutes.size > 0 && `(${filteredRoutes.size} selected)`}
+                        </p>
+                        <div className="flex flex-wrap gap-2 items-center">
+                          {Array.from(new Set(liveBusData.MonitoredStopVisit.map(m => m.PublishedLineName))).sort().map((route) => {
+                            const isActive = filteredRoutes.size === 0 || filteredRoutes.has(route);
+                            // Get color from a matching vehicle's destination
+                            const matching = liveBusData.MonitoredStopVisit.find(m => m.PublishedLineName === route)
+                            const colorSource = matching ? (matching.DestinationName || matching.PublishedLineName) : route
+                            const color = getBusRouteColor(String(colorSource || ''))
+                            // Compute readable text color
+                            const hex = color.replace('#','')
+                            const rr = parseInt(hex.substring(0,2),16)
+                            const gg = parseInt(hex.substring(2,4),16)
+                            const bb = parseInt(hex.substring(4,6),16)
+                            const luminance = (0.299*rr + 0.587*gg + 0.114*bb)/255
+                            const textColor = luminance > 0.6 ? '#000' : '#fff'
+                            return (
+                              <button
+                                key={route}
+                                onClick={() => toggleRouteFilter(route)}
+                                className={`px-2 py-0.5 rounded text-xs font-medium transition-all cursor-pointer hover:scale-105 ${
+                                  isActive ? 'ring-2 ring-offset-2 ring-offset-background' : 'opacity-40 hover:opacity-60'
+                                }`}
+                                style={{ 
+                                  backgroundColor: color,
+                                  color: textColor,
+                                  borderColor: color
+                                }}
+                                title={`Route ${route} - Click to ${isActive && filteredRoutes.size > 0 ? 'hide' : 'show'}`}
+                              >
+                                {route}
+                              </button>
+                            );
+                          })}
+                          {filteredRoutes.size > 0 && (
+                            <button
+                              onClick={() => setFilteredRoutes(new Set())}
+                              className="px-3 py-1 text-xs font-medium text-muted-foreground hover:text-foreground border border-muted-foreground/30 rounded hover:border-foreground/50 transition-colors"
+                            >
+                              Clear filters
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
                     {liveBusData && (
@@ -1145,45 +1181,10 @@ export default function BusPage() {
                 ) : liveBusData ? (
                 liveBusData.MonitoredStopVisit.length > 0 ? (
                   <div>
-                    {/* Route filter chips */}
-                    <div className="mb-2 flex flex-wrap gap-2">
-                      <button className="text-xs px-2 py-1 rounded-full bg-muted text-foreground/90" onClick={() => setVisibleRoutes(Array.from(new Set(liveBusData.MonitoredStopVisit.map(m => m.PublishedLineName))))}>All</button>
-                      <button className="text-xs px-2 py-1 rounded-full bg-muted text-foreground/90" onClick={() => setVisibleRoutes([])}>Clear</button>
-                      {Array.from(new Set(liveBusData.MonitoredStopVisit.map(m => m.PublishedLineName))).map((route) => {
-                        const active = visibleRoutes == null ? true : visibleRoutes.includes(route)
-                        // derive color from a matching vehicle's destination (rush/limited info is often in destination)
-                        const matching = liveBusData.MonitoredStopVisit.find(m => m.PublishedLineName === route)
-                        const colorSource = matching ? (matching.DestinationName || matching.PublishedLineName) : route
-                        const color = getBusRouteColor(String(colorSource || ''))
-                          // compute readable text color for chip
-                          const hex = color.replace('#','')
-                          const rr = parseInt(hex.substring(0,2),16)
-                          const gg = parseInt(hex.substring(2,4),16)
-                          const bb = parseInt(hex.substring(4,6),16)
-                          const luminance = (0.299*rr + 0.587*gg + 0.114*bb)/255
-                          const chipTextColor = luminance > 0.6 ? '#000' : '#fff'
-                          return (
-                            <button
-                              key={route}
-                              onClick={() => {
-                                if (visibleRoutes == null) setVisibleRoutes([route])
-                                else if (visibleRoutes.includes(route)) setVisibleRoutes(visibleRoutes.filter(r => r !== route))
-                                else setVisibleRoutes([...visibleRoutes, route])
-                              }}
-                              className={`text-xs px-2 py-1 rounded-full border`}
-                              style={{ background: active ? color : undefined, color: active ? chipTextColor : undefined }}
-                            >
-                              {route}
-                            </button>
-                          )
-                        })}
-                    </div>
-
                     {liveBusData.MonitoredStopVisit
                       .filter(bus => {
-                        if (!visibleRoutes) return true
-                        if (visibleRoutes.length === 0) return false
-                        return visibleRoutes.includes(bus.PublishedLineName)
+                        if (filteredRoutes.size === 0) return true
+                        return filteredRoutes.has(bus.PublishedLineName)
                       })
                       .map((bus, i) => {
                       // compute minutes away and expected time-only (HH:MM:SS)
