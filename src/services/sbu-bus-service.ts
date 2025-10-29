@@ -1,16 +1,3 @@
-// Import CSV files as raw text
-import innerLoopCSV from './sbu-bus-data/Inner Loop.csv?raw';
-import outerLoopCSV from './sbu-bus-data/Outer Loop.csv?raw';
-import hospitalChapinCSV from './sbu-bus-data/Hospital_Chapin.csv?raw';
-import expressEastCSV from './sbu-bus-data/Express East.csv?raw';
-import expressWestCSV from './sbu-bus-data/Express West.csv?raw';
-import shoppingRouteEastCSV from './sbu-bus-data/Shopping Route East.csv?raw';
-import shoppingRouteWestCSV from './sbu-bus-data/Shopping Route West.csv?raw';
-import railroadCSV from './sbu-bus-data/Railroad.csv?raw';
-import portJeffersonCSV from './sbu-bus-data/Port Jefferson.csv?raw';
-import rdParkCSV from './sbu-bus-data/R&D Park.csv?raw';
-import stopsListCSV from './sbu-bus-data/Stops List.csv?raw';
-
 export interface BusStop {
   name: string;
   latitude: number;
@@ -51,10 +38,19 @@ export interface BusArrival {
   runNumber: number;
 }
 
+// Fetch CSV file from public folder
+const fetchCSV = async (fileName: string): Promise<string> => {
+  const response = await fetch(`/sbu-bus-data/${fileName}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${fileName}`);
+  }
+  return response.text();
+};
+
 // Parse the stops list CSV
-const parseStopsList = (): Map<string, BusStop> => {
+const parseStopsList = (csv: string): Map<string, BusStop> => {
   const stopsMap = new Map<string, BusStop>();
-  const lines = stopsListCSV.trim().split('\n');
+  const lines = csv.trim().split('\n');
   
   // Skip header row
   for (let i = 1; i < lines.length; i++) {
@@ -117,37 +113,48 @@ const parseRouteCSV = (csv: string, stopsMap: Map<string, BusStop>): SbuRoute | 
 };
 
 // Main function to get all routes
-export const getSbuBusRoutes = (): SbuRoute[] => {
-  const stopsMap = parseStopsList();
+export const getSbuBusRoutes = async (): Promise<SbuRoute[]> => {
+  const stopsListCSV = await fetchCSV('Stops List.csv');
+  const stopsMap = parseStopsList(stopsListCSV);
   const routes: SbuRoute[] = [];
   
+  const innerLoopCSV = await fetchCSV('Inner Loop.csv');
   const innerLoop = parseRouteCSV(innerLoopCSV, stopsMap);
   if (innerLoop) routes.push(innerLoop);
   
+  const outerLoopCSV = await fetchCSV('Outer Loop.csv');
   const outerLoop = parseRouteCSV(outerLoopCSV, stopsMap);
   if (outerLoop) routes.push(outerLoop);
   
+  const hospitalChapinCSV = await fetchCSV('Hospital_Chapin.csv');
   const hospitalChapin = parseRouteCSV(hospitalChapinCSV, stopsMap);
   if (hospitalChapin) routes.push(hospitalChapin);
   
+  const expressEastCSV = await fetchCSV('Express East.csv');
   const expressEast = parseRouteCSV(expressEastCSV, stopsMap);
   if (expressEast) routes.push(expressEast);
   
+  const expressWestCSV = await fetchCSV('Express West.csv');
   const expressWest = parseRouteCSV(expressWestCSV, stopsMap);
   if (expressWest) routes.push(expressWest);
   
+  const shoppingRouteEastCSV = await fetchCSV('Shopping Route East.csv');
   const shoppingRouteEast = parseRouteCSV(shoppingRouteEastCSV, stopsMap);
   if (shoppingRouteEast) routes.push(shoppingRouteEast);
   
+  const shoppingRouteWestCSV = await fetchCSV('Shopping Route West.csv');
   const shoppingRouteWest = parseRouteCSV(shoppingRouteWestCSV, stopsMap);
   if (shoppingRouteWest) routes.push(shoppingRouteWest);
   
+  const railroadCSV = await fetchCSV('Railroad.csv');
   const railroad = parseRouteCSV(railroadCSV, stopsMap);
   if (railroad) routes.push(railroad);
   
+  const portJeffersonCSV = await fetchCSV('Port Jefferson.csv');
   const portJefferson = parseRouteCSV(portJeffersonCSV, stopsMap);
   if (portJefferson) routes.push(portJefferson);
   
+  const rdParkCSV = await fetchCSV('R&D Park.csv');
   const rdPark = parseRouteCSV(rdParkCSV, stopsMap);
   if (rdPark) routes.push(rdPark);
   
@@ -155,8 +162,8 @@ export const getSbuBusRoutes = (): SbuRoute[] => {
 };
 
 // Get a specific route by name
-export const getSbuBusRoute = (routeName: string): SbuRoute | undefined => {
-  const routes = getSbuBusRoutes();
+export const getSbuBusRoute = async (routeName: string): Promise<SbuRoute | undefined> => {
+  const routes = await getSbuBusRoutes();
   return routes.find(route => route.name.toLowerCase() === routeName.toLowerCase());
 };
 

@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Button } from '../ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '../ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { Check, ChevronsUpDown, Bus } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { getSbuBusRoutes, getNextBusForRoute, type SbuRoute, type NextBusInfo } from '../../services/sbu-bus-service'
 import { getCachedRouteGeometry, type RouteGeometry } from '../../services/route-geometry'
@@ -139,10 +139,13 @@ export default function SbuBusPage() {
 
   // Load routes on mount
   useEffect(() => {
-    const sbuRoutes = getSbuBusRoutes()
-    setRoutes(sbuRoutes)
-    // Initialize all routes as visible
-    setVisibleRoutes(new Set(sbuRoutes.map(r => r.name)))
+    const loadRoutes = async () => {
+      const sbuRoutes = await getSbuBusRoutes()
+      setRoutes(sbuRoutes)
+      // Initialize all routes as visible
+      setVisibleRoutes(new Set(sbuRoutes.map(r => r.name)))
+    }
+    loadRoutes()
   }, [])
 
   // Update current route when selection changes
@@ -366,7 +369,17 @@ export default function SbuBusPage() {
         {/* Content Panel */}
         <ResizablePanel defaultSize={50} minSize={30}>
           <div className="h-full p-4 lg:p-8 bg-background overflow-y-auto relative z-10">
-            <h1 className="text-2xl font-bold mb-4">SBU Bus</h1>
+            <div className="mb-6">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-3 bg-primary/10 rounded-xl">
+                  <Bus className="w-8 h-8 text-primary" />
+                </div>
+                <div>
+                  <h1 className="text-3xl font-bold text-foreground">SBU Bus</h1>
+                  <p className="text-muted-foreground">Stony Brook University shuttle service</p>
+                </div>
+              </div>
+            </div>
             
             {/* Tabs for Search by Route or Stop */}
             <Tabs defaultValue="route" className="w-full" value={activeTab} onValueChange={setActiveTab}>
@@ -433,7 +446,7 @@ export default function SbuBusPage() {
                 </h2>
                 
                 <h3 className="text-lg font-medium mb-2">Stops ({currentRoute.stops.length})</h3>
-                <div className="space-y-0">
+                <div className="space-y-2">
                   {currentRoute.stops.map((stop, index) => {
                     const nextBusData = nextBusInfo.find(info => info.stopName === stop.name);
                     const buses = nextBusData?.nextBuses || [];
@@ -564,7 +577,7 @@ export default function SbuBusPage() {
                 
                 <p className="text-muted-foreground mb-4">Upcoming buses in arrival order.</p>
                 
-                <div>
+                <div className="space-y-2">
                   {/* Flatten all buses from all routes and sort by arrival time */}
                   {routes
                     .filter(route => 

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Button } from './ui/button'
-import { Input } from './ui/input'
 import { Moon, Sun, Menu } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
 
@@ -10,7 +9,6 @@ interface MainLayoutProps {
 }
 
 export default function MainLayout({ children }: MainLayoutProps) {
-  const [searchQuery, setSearchQuery] = useState('')
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const navigate = useNavigate()
   const location = useLocation()
@@ -110,43 +108,32 @@ export default function MainLayout({ children }: MainLayoutProps) {
             <div className="flex rounded-md overflow-hidden border">
               <Button 
                 variant={isActive('/bus') ? 'default' : 'ghost'} 
-                className="rounded-none border-r"
+                className={`rounded-none border-r ${isActive('/bus') ? 'dark:text-white' : ''}`}
                 onClick={() => navigate('/bus')}
               >
                 Bus
               </Button>
               <Button 
                 variant={isActive('/sbu-bus') ? 'default' : 'ghost'} 
-                className="rounded-none border-r"
+                className={`rounded-none border-r ${isActive('/sbu-bus') ? 'dark:text-white' : ''}`}
                 onClick={() => navigate('/sbu-bus')}
               >
                 SBU Bus
               </Button>
               <Button 
                 variant={isActive('/metro') ? 'default' : 'ghost'} 
-                className="rounded-none border-r"
+                className={`rounded-none border-r ${isActive('/metro') ? 'dark:text-white' : ''}`}
                 onClick={() => navigate('/metro')}
               >
                 Subway
               </Button>
               <Button 
                 variant={isActive('/railroad') ? 'default' : 'ghost'} 
-                className="rounded-none"
+                className={`rounded-none ${isActive('/railroad') ? 'dark:text-white' : ''}`}
                 onClick={() => navigate('/railroad')}
               >
                 Railroad
               </Button>
-            </div>
-
-            {/* Search Bar */}
-            <div className="flex-1 max-w-md">
-              <Input
-                type="search"
-                placeholder="Search routes, stations..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-background"
-              />
             </div>
 
             {/* Theme Toggle Button */}

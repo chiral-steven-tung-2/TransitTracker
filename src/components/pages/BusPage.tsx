@@ -8,7 +8,7 @@ import icon from 'leaflet/dist/images/marker-icon.png'
 import iconShadow from 'leaflet/dist/images/marker-shadow.png'
 import { useEffect, useState } from 'react'
 import { Button } from '../ui/button'
-import { Eye, RefreshCw, MapPin, X } from 'lucide-react'
+import { Eye, RefreshCw, MapPin, X, Bus } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import {
@@ -678,13 +678,15 @@ export default function BusPage() {
         {/* Content Panel */}
         <ResizablePanel defaultSize={50} minSize={30}>
           <div className="h-full p-4 lg:p-8 bg-background overflow-y-auto relative z-10">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h1 className="text-lg font-semibold text-foreground">Bus Time</h1>
-                <p className="text-sm text-muted-foreground">Live arrivals & vehicle locations</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="text-xs bg-muted rounded-full px-2 py-1 text-foreground/80">Auto-refresh: 30s</div>
+            <div className="mb-6">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-3 bg-primary/10 rounded-xl">
+                  <Bus className="w-8 h-8 text-primary" />
+                </div>
+                <div>
+                  <h1 className="text-3xl font-bold text-foreground">NYC Bus</h1>
+                  <p className="text-muted-foreground">Live arrivals & vehicle locations</p>
+                </div>
               </div>
             </div>
 
