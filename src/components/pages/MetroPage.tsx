@@ -240,12 +240,48 @@ export default function MetroPage() {
                   <label className="text-sm font-semibold mb-3 block text-foreground">Select Line Group</label>
                   <Select value={selectedRouteGroup} onValueChange={setSelectedRouteGroup}>
                     <SelectTrigger className="w-full h-12 text-base">
-                      <SelectValue placeholder="Choose a line group..." />
+                      {selectedRouteGroup ? (
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1.5">
+                            {routeGroups.find(g => g.name === selectedRouteGroup)?.routes.map(route => (
+                              <span
+                                key={route.id}
+                                className="w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs"
+                                style={{
+                                  backgroundColor: route.color,
+                                  color: route.textColor
+                                }}
+                              >
+                                {route.shortName}
+                              </span>
+                            ))}
+                          </div>
+                          <span className="text-muted-foreground">{selectedRouteGroup}</span>
+                        </div>
+                      ) : (
+                        <SelectValue placeholder="Choose a line group..." />
+                      )}
                     </SelectTrigger>
                     <SelectContent>
                       {routeGroups.map(group => (
-                        <SelectItem key={group.name} value={group.name} className="text-base">
-                          {group.name}
+                        <SelectItem key={group.name} value={group.name} className="text-base py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1.5">
+                              {group.routes.map(route => (
+                                <span
+                                  key={route.id}
+                                  className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-sm"
+                                  style={{
+                                    backgroundColor: route.color,
+                                    color: route.textColor
+                                  }}
+                                >
+                                  {route.shortName}
+                                </span>
+                              ))}
+                            </div>
+                            <span className="text-muted-foreground">{group.name}</span>
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>

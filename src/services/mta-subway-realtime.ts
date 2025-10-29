@@ -87,9 +87,6 @@ export const fetchSubwayArrivals = async (
   }
 
   try {
-    console.log(`Fetching subway data for stop ${stopId}, route ${routeId}`);
-    console.log(`Feed URL: ${feedUrl}`);
-    
     const response = await fetch(feedUrl);
 
     if (!response.ok) {
@@ -98,12 +95,6 @@ export const fetchSubwayArrivals = async (
 
     const buffer = await response.arrayBuffer();
     const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(new Uint8Array(buffer));
-    
-    console.log('=== FEED DATA ===');
-    console.log('Feed header:', feed.header);
-    console.log('Number of entities:', feed.entity.length);
-    console.log('First 3 entities:', feed.entity.slice(0, 3));
-    console.log('=================');
     
     const allArrivals = await parseGTFSRealtimeFeed(feed, stopId, routeId);
     
@@ -121,8 +112,6 @@ export const fetchSubwayArrivals = async (
     
   } catch (error) {
     console.error('Error fetching subway arrivals:', error);
-    // Fall back to mock data if API fails
-    console.log('Falling back to mock data');
     return getMockSubwayArrivals(stopId, routeId);
   }
 };
@@ -137,39 +126,21 @@ export const parseGTFSRealtimeFeed = async (
 ): Promise<SubwayArrival[]> => {
   const arrivals: SubwayArrival[] = [];
   
-  console.log('🚇 === PARSING GTFS FEED ===');
-  
   // Load trips data and stops data for destination lookup
   const tripsData = await getTripsCache();
   const stopsData = await getStopsCache();
-  
-  console.log(`✅ Loaded ${tripsData.size} trips and ${stopsData.size} stops for destination lookup`);
   
   // MTA uses stop IDs with direction suffixes (N for north/uptown, S for south/downtown)
   // Remove any direction suffix from our stop ID for matching
   const baseStopId = stopId.replace(/[NS]$/i, '');
   
-  console.log(`Parsing feed for stop ${stopId} (base: ${baseStopId}), route ${routeId}`);
-  console.log(`Feed has ${feed.entity.length} entities`);
-  
-  let tripUpdatesCount = 0;
-  let relevantTripsCount = 0;
-  
   for (const entity of feed.entity) {
     if (entity.tripUpdate && entity.tripUpdate.trip) {
-      tripUpdatesCount++;
       const trip = entity.tripUpdate.trip;
       
       // Filter by route if specified
       if (routeId && trip.routeId !== routeId) {
         continue;
-      }
-      relevantTripsCount++;
-      
-      // Log trip details for debugging
-      if (relevantTripsCount === 1) {
-        console.log('Sample trip object:', trip);
-        console.log('Trip fields:', Object.keys(trip));
       }
       
       // Check each stop time update
@@ -184,11 +155,6 @@ export const parseGTFSRealtimeFeed = async (
                             updateBaseStopId === baseStopId ||
                             updateStopId === `${baseStopId}N` ||
                             updateStopId === `${baseStopId}S`;
-          
-          // Log all stops for this trip on the first relevant trip to debug
-          if (relevantTripsCount === 1) {
-            console.log(`Trip ${trip.tripId} stops at: ${entity.tripUpdate.stopTimeUpdate.map(s => s.stopId).join(', ')}`);
-          }
           
           if (matchesStop) {
             // Handle both number and Long types from protobuf
@@ -211,8 +177,6 @@ export const parseGTFSRealtimeFeed = async (
             const departureTime = getTimeValue(stopTimeUpdate.departure?.time) || arrivalTime;
             
             if (arrivalTime > 0) {
-              console.log(`Found arrival: route ${trip.routeId}, stop ${updateStopId}, time ${arrivalTime}`);
-              
               // Determine destination from the last stop in the trip's stop sequence
               let destination: string | undefined;
               
@@ -238,9 +202,6 @@ export const parseGTFSRealtimeFeed = async (
                 const stopInfo = stopsData.get(lastStopBaseId);
                 if (stopInfo) {
                   destination = stopInfo.stopName;
-                  console.log(`✅ Found destination from stop sequence: ${destination} (stop ${lastStopId})`);
-                } else {
-                  console.log(`⚠️ Stop ${lastStopBaseId} not found in stops data`);
                 }
               }
               
@@ -248,9 +209,6 @@ export const parseGTFSRealtimeFeed = async (
               if (!destination) {
                 const tripData = tripsData.get(trip.tripId || '');
                 destination = tripData?.tripHeadsign;
-                if (destination) {
-                  console.log(`Using trip headsign from static data: ${destination}`);
-                }
               }
               
               // Final fallback: Use route/direction mapping
@@ -263,14 +221,10 @@ export const parseGTFSRealtimeFeed = async (
                 
                 if (routeDest) {
                   destination = isNorthbound ? routeDest.northbound : routeDest.southbound;
-                  console.log(`Using fallback route/direction mapping: ${destination}`);
                 } else {
                   destination = 'Unknown Destination';
-                  console.log(`No destination mapping found for route ${trainRoute}`);
                 }
               }
-              
-              console.log(`Trip ${trip.tripId} final destination: ${destination}`);
               
               arrivals.push({
                 routeId: trip.routeId || routeId,
@@ -288,9 +242,6 @@ export const parseGTFSRealtimeFeed = async (
     }
   }
   
-  console.log(`Trip updates in feed: ${tripUpdatesCount}`);
-  console.log(`Relevant trips for route ${routeId}: ${relevantTripsCount}`);
-  console.log(`Found ${arrivals.length} arrivals for stop ${stopId}`);
   return arrivals;
 };
 

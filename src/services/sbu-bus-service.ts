@@ -91,8 +91,6 @@ const parseRouteCSV = (csv: string, stopsMap: Map<string, BusStop>): SbuRoute | 
     const stop = stopsMap.get(stopName);
     if (stop) {
       stops.push(stop);
-    } else {
-      console.warn(`Stop "${stopName}" not found in stops list`);
     }
   }
   

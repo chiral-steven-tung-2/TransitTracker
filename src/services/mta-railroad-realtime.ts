@@ -22,17 +22,19 @@ const MNRR_ROUTE_TERMINALS: Record<string, { inbound: string; outbound: string[]
 
 // Map of LIRR routes to their typical terminal destinations
 const LIRR_ROUTE_TERMINALS: Record<string, { westbound: string; eastbound: string[] }> = {
-  '1': { westbound: 'Penn Station', eastbound: ['Ronkonkoma'] },
-  '2': { westbound: 'Penn Station', eastbound: ['Babylon'] },
-  '3': { westbound: 'Penn Station', eastbound: ['Long Beach'] },
-  '4': { westbound: 'Penn Station', eastbound: ['Far Rockaway', 'Long Beach'] },
-  '5': { westbound: 'Penn Station', eastbound: ['Hempstead'] },
-  '7': { westbound: 'Penn Station', eastbound: ['Oyster Bay'] },
-  '8': { westbound: 'Flatbush Avenue', eastbound: ['Jamaica'] },
+  '1': { westbound: 'Penn Station', eastbound: ['Babylon'] },
+  '2': { westbound: 'Penn Station', eastbound: ['Hempstead'] },
+  '3': { westbound: 'Penn Station', eastbound: ['Oyster Bay'] },
+  '4': { westbound: 'Penn Station', eastbound: ['Ronkonkoma'] },
+  '5': { westbound: 'Penn Station', eastbound: ['Montauk', 'Speonk'] },
+  '6': { westbound: 'Penn Station', eastbound: ['Long Beach'] },
+  '7': { westbound: 'Penn Station', eastbound: ['Far Rockaway'] },
+  '8': { westbound: 'Penn Station', eastbound: ['West Hempstead'] },
   '9': { westbound: 'Penn Station', eastbound: ['Port Washington'] },
-  '10': { westbound: 'Penn Station', eastbound: ['Huntington', 'Port Jefferson'] },
-  '11': { westbound: 'Penn Station', eastbound: ['Montauk', 'Speonk'] },
-  '12': { westbound: 'Penn Station', eastbound: ['West Hempstead'] },
+  '10': { westbound: 'Penn Station', eastbound: ['Port Jefferson', 'Huntington'] },
+  '11': { westbound: 'Penn Station', eastbound: ['Belmont Park'] },
+  '12': { westbound: 'Flatbush Avenue', eastbound: ['Jamaica'] },
+  '13': { westbound: 'Penn Station', eastbound: ['Greenport'] },
 };
 
 const tripsCache = new Map<Railroad, Map<string, { tripHeadsign: string; routeId: string }>>();
@@ -40,7 +42,7 @@ const tripsCache = new Map<Railroad, Map<string, { tripHeadsign: string; routeId
 /**
  * Determine destination for a trip based on route and stop sequence
  */
-function getDestinationForTrip(railroad: Railroad, routeId: string, currentStopId: string, stopSequence: any[], allStops: Map<string, any>): string {
+function getDestinationForTrip(railroad: Railroad, routeId: string, stopSequence: any[], allStops: Map<string, any>): string {
   if (railroad === 'mnrr') {
     const terminals = MNRR_ROUTE_TERMINALS[routeId];
     if (!terminals) return 'Unknown Destination';
@@ -102,7 +104,6 @@ async function loadTripsData(railroad: Railroad): Promise<Map<string, { tripHead
     return tripsCache.get(railroad)!;
   }
 
-  console.log(`Loading trips data for ${railroad.toUpperCase()}...`);
   const tripsMap = new Map<string, { tripHeadsign: string; routeId: string }>();
 
   try {
@@ -171,8 +172,6 @@ async function loadTripsData(railroad: Railroad): Promise<Map<string, { tripHead
       }
     }
 
-    console.log(`Loaded ${tripsMap.size} trips for ${railroad.toUpperCase()}`);
-    console.log(`Sample trip IDs:`, Array.from(tripsMap.keys()).slice(0, 5));
     tripsCache.set(railroad, tripsMap);
     return tripsMap;
   } catch (error) {
@@ -209,18 +208,13 @@ async function parseRailroadRealtimeFeed(
 ): Promise<RailroadArrival[]> {
   const arrivals: RailroadArrival[] = [];
 
-  console.log(`🚂 === PARSING RAILROAD FEED ===`);
-  console.log(`Parsing feed for stop ${stopId}${routeId ? `, route ${routeId}` : ''}`);
-  console.log(`Feed has ${feed.entity.length} entities`);
-
   // Load trips data for destination lookup
   const tripsData = await loadTripsData(railroad);
-  console.log(`✅ Loaded ${tripsData.size} trips for destination lookup`);
 
   // Load stops data for station name lookup
   const stopsMap = new Map<string, any>();
   try {
-    const path = `/src/services/mta-${railroad}-data/stops.txt`;
+    const path = `/mta-${railroad}-data/stops.txt`;
     const response = await fetch(path);
     if (response.ok) {
       const stopsText = await response.text();
@@ -237,10 +231,9 @@ async function parseRailroadRealtimeFeed(
           stopsMap.set(values[stopIdIndex], { name: values[stopNameIndex] });
         }
       }
-      console.log(`✅ Loaded ${stopsMap.size} stops for name lookup`);
     }
   } catch (error) {
-    console.warn('Could not load stops data:', error);
+    console.error('Could not load stops data:', error);
   }
 
   feed.entity.forEach((entity: any) => {
@@ -248,18 +241,6 @@ async function parseRailroadRealtimeFeed(
 
     const trip = entity.tripUpdate.trip;
     const stopTimeUpdates = entity.tripUpdate.stopTimeUpdate || [];
-
-    // Debug: Log all available trip and entity fields
-    if (arrivals.length === 0) {
-      console.log(`📋 Trip object keys:`, Object.keys(trip));
-      console.log(`📋 Sample trip object:`, JSON.stringify(trip, null, 2));
-      console.log(`📋 Entity keys:`, Object.keys(entity));
-      console.log(`📋 TripUpdate keys:`, Object.keys(entity.tripUpdate));
-      if (entity.tripUpdate.stopTimeUpdate && entity.tripUpdate.stopTimeUpdate[0]) {
-        console.log(`📋 StopTimeUpdate keys:`, Object.keys(entity.tripUpdate.stopTimeUpdate[0]));
-        console.log(`📋 Sample stopTimeUpdate:`, JSON.stringify(entity.tripUpdate.stopTimeUpdate[0], null, 2));
-      }
-    }
 
     // Filter by route if specified
     if (routeId && trip.routeId !== routeId) return;
@@ -293,20 +274,11 @@ async function parseRailroadRealtimeFeed(
         let destination: string;
         if (tripData?.tripHeadsign) {
           destination = tripData.tripHeadsign;
-          console.log(`✅ Found destination from static data: "${destination}"`);
         } else if (trip.tripHeadsign) {
           destination = trip.tripHeadsign;
-          console.log(`ℹ️ Using realtime headsign: "${destination}"`);
         } else {
-          // Log stop sequence for debugging
-          if (arrivals.length < 3) {
-            console.log(`📍 Stop sequence for trip ${tripId}:`, stopTimeUpdates.map((s: any) => s.stopId));
-            console.log(`   Current stop: ${stopId}, Route: ${trip.routeId}`);
-          }
-          
           // Infer destination from route and stop sequence
-          destination = getDestinationForTrip(railroad, trip.routeId || '', stopId, stopTimeUpdates, stopsMap);
-          console.log(`🎯 Inferred destination: "${destination}" (route ${trip.routeId}, current stop ${stopId})`);
+          destination = getDestinationForTrip(railroad, trip.routeId || '', stopTimeUpdates, stopsMap);
         }
 
         arrivals.push({
@@ -323,7 +295,6 @@ async function parseRailroadRealtimeFeed(
     });
   });
 
-  console.log(`Found ${arrivals.length} arrivals for stop ${stopId}`);
   return arrivals;
 }
 

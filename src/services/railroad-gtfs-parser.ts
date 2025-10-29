@@ -108,7 +108,7 @@ function parseCSVLine(line: string): string[] {
  * Load GTFS file for a specific railroad
  */
 async function loadGTFSFile(railroad: 'lirr' | 'mnrr', filename: string): Promise<string> {
-  const path = `/src/services/mta-${railroad}-data/${filename}`;
+  const path = `/mta-${railroad}-data/${filename}`;
   const response = await fetch(path);
   if (!response.ok) {
     throw new Error(`Failed to load ${filename} for ${railroad}`);
@@ -138,7 +138,6 @@ export async function loadRailroadRoutes(railroad: 'lirr' | 'mnrr'): Promise<Map
   });
 
   caches[railroad].routes = routesMap;
-  console.log(`Loaded ${routesMap.size} routes for ${railroad.toUpperCase()}`);
   return routesMap;
 }
 
@@ -164,7 +163,6 @@ export async function loadRailroadStops(railroad: 'lirr' | 'mnrr'): Promise<Map<
   });
 
   caches[railroad].stops = stopsMap;
-  console.log(`Loaded ${stopsMap.size} stops for ${railroad.toUpperCase()}`);
   return stopsMap;
 }
 
@@ -174,7 +172,6 @@ export async function loadRailroadStops(railroad: 'lirr' | 'mnrr'): Promise<Map<
 async function buildRouteStopsMapping(railroad: 'lirr' | 'mnrr'): Promise<Map<string, Set<string>>> {
   if (caches[railroad].routeStops) return caches[railroad].routeStops!;
 
-  console.log(`Building route-to-stops mapping for ${railroad.toUpperCase()}...`);
   const routeStopsMap = new Map<string, Set<string>>();
 
   // Load trips to get route_id for each trip_id
@@ -204,7 +201,6 @@ async function buildRouteStopsMapping(railroad: 'lirr' | 'mnrr'): Promise<Map<st
   });
 
   caches[railroad].routeStops = routeStopsMap;
-  console.log(`Route-to-stops mapping complete for ${railroad.toUpperCase()}`);
   return routeStopsMap;
 }
 
@@ -217,11 +213,8 @@ export async function getStopsForRoute(railroad: 'lirr' | 'mnrr', routeId: strin
 
   const stopIdsForRoute = routeStopsMap.get(routeId);
   if (!stopIdsForRoute) {
-    console.log(`No stops found for route ${routeId} on ${railroad.toUpperCase()}`);
     return [];
   }
-
-  console.log(`Route ${routeId} has ${stopIdsForRoute.size} stops on ${railroad.toUpperCase()}`);
 
   const routeStops: RailroadStop[] = [];
   const seenParents = new Set<string>();
@@ -254,7 +247,6 @@ export async function getRoutesForStop(railroad: 'lirr' | 'mnrr', stopId: string
     }
   });
 
-  console.log(`Stop ${stopId} is served by routes: ${routesForStop.join(', ')} on ${railroad.toUpperCase()}`);
   return routesForStop;
 }
 
@@ -262,13 +254,6 @@ export async function getRoutesForStop(railroad: 'lirr' | 'mnrr', stopId: string
  * Get a stop by ID
  */
 export async function getStopById(railroad: 'lirr' | 'mnrr', stopId: string): Promise<RailroadStop | null> {
-  console.log(`🔍 Looking up stop ID "${stopId}" for ${railroad.toUpperCase()}`);
   const stops = await loadRailroadStops(railroad);
-  console.log(`📍 Total stops loaded: ${stops.size}`);
-  console.log(`📍 First 5 stop IDs:`, Array.from(stops.keys()).slice(0, 5));
-  
-  const result = stops.get(stopId) || null;
-  console.log(`📍 Found stop:`, result ? `${result.stopName} (${result.stopId})` : 'NOT FOUND');
-  
-  return result;
+  return stops.get(stopId) || null;
 }

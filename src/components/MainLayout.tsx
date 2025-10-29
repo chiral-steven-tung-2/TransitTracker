@@ -59,7 +59,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     <span className="text-sm">
                       {isActive('/bus') ? 'Bus' : 
                        isActive('/sbu-bus') ? 'SBU Bus' : 
-                       isActive('/metro') ? 'Metro' : 
+                       isActive('/metro') ? 'Subway' : 
                        isActive('/railroad') ? 'Railroad' : 'Menu'}
                     </span>
                   </Button>
@@ -72,7 +72,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                     SBU Bus
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => navigate('/metro')}>
-                    Metro/Subway
+                    Subway
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => navigate('/railroad')}>
                     Railroad
@@ -127,7 +127,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
                 className="rounded-none border-r"
                 onClick={() => navigate('/metro')}
               >
-                Metro/Subway
+                Subway
               </Button>
               <Button 
                 variant={isActive('/railroad') ? 'default' : 'ghost'} 

@@ -31,7 +31,7 @@ const parseXML = (xml: string): any => {
 
 const naturalCompare = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 
-const cleanMTARoutesData = (rawData: any, company: string): CleanedRoutesData => {
+const cleanMTARoutesData = (rawData: any): CleanedRoutesData => {
 	const routesList = rawData.response.data.list.route;
 
 	const routesData: CleanedRoutesData = {
@@ -98,7 +98,7 @@ export const fetchNYCTBusRoutesData = async (): Promise<CleanedRoutesData> => {
 		}
 		const xml = await response.text();
 		const parsed = parseXML(xml);
-		const cleaned = cleanMTARoutesData(parsed, 'NYCT');
+		const cleaned = cleanMTARoutesData(parsed);
 		console.log('NYCT Response:', cleaned);
 		return cleaned;
 	} catch (error) {
@@ -116,7 +116,7 @@ export const fetchBCBusRoutesData = async (): Promise<CleanedRoutesData> => {
 		}
 		const xml = await response.text();
 		const parsed = parseXML(xml);
-		const cleaned = cleanMTARoutesData(parsed, 'BC');
+		const cleaned = cleanMTARoutesData(parsed);
 		console.log('BC Response:', cleaned);
 		return cleaned;
 	} catch (error) {

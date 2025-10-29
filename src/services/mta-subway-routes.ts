@@ -62,6 +62,7 @@ export const getSubwayRouteGroups = async (): Promise<{ name: string; routes: Su
     'L': [],
     'JZ': [],
     'G': [],
+    'SIR': [],
     'S': []
   };
   
@@ -76,19 +77,21 @@ export const getSubwayRouteGroups = async (): Promise<{ name: string; routes: Su
     else if (id === 'L') groups['L'].push(route);
     else if (['J', 'Z'].includes(id)) groups['JZ'].push(route);
     else if (id === 'G') groups['G'].push(route);
+    else if (id === 'SI') groups['SIR'].push(route);
     else if (id.includes('S') || id === 'GS' || id === 'FS') groups['S'].push(route);
   });
   
   return [
-    { name: '1/2/3 Lines', routes: groups['123'] },
-    { name: '4/5/6 Lines', routes: groups['456'] },
-    { name: '7 Line', routes: groups['7'] },
-    { name: 'N/Q/R/W Lines', routes: groups['NQRW'] },
-    { name: 'A/C/E Lines', routes: groups['ACE'] },
-    { name: 'B/D/F/M Lines', routes: groups['BDFM'] },
-    { name: 'L Line', routes: groups['L'] },
-    { name: 'J/Z Lines', routes: groups['JZ'] },
-    { name: 'G Line', routes: groups['G'] },
+    { name: '7th Avenue - Broadway Line', routes: groups['123'] },
+    { name: 'Lexington Avenue Line', routes: groups['456'] },
+    { name: 'Flushing Line', routes: groups['7'] },
+    { name: 'Broadway Line', routes: groups['NQRW'] },
+    { name: '8th Avenue Line', routes: groups['ACE'] },
+    { name: '6th Avenue Line', routes: groups['BDFM'] },
+    { name: 'Canarsie Line', routes: groups['L'] },
+    { name: 'Nassau Street Line', routes: groups['JZ'] },
+    { name: 'Brooklyn-Queens Crosstown Line', routes: groups['G'] },
+    { name: 'Staten Island Railway', routes: groups['SIR'] },
     { name: 'Shuttles', routes: groups['S'] },
   ].filter(group => group.routes.length > 0);
 };

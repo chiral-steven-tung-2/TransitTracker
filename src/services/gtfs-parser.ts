@@ -131,7 +131,7 @@ function parseCSVLine(line: string): string[] {
  */
 async function loadGTFSFile(filename: string): Promise<string> {
   try {
-    const response = await fetch(`/gtfs-data/${filename}`);
+    const response = await fetch(`/mta-subway-data/${filename}`);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
