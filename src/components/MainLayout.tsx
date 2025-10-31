@@ -58,7 +58,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
                       {isActive('/bus') ? 'Bus' : 
                        isActive('/sbu-bus') ? 'SBU Bus' : 
                        isActive('/metro') ? 'Subway' : 
-                       isActive('/railroad') ? 'Railroad' : 'Menu'}
+                       isActive('/railroad') ? 'Railroad' : 
+                       isActive('/service-status') ? 'Service Status' : 'Menu'}
                     </span>
                   </Button>
                 </DropdownMenuTrigger>
@@ -74,6 +75,9 @@ export default function MainLayout({ children }: MainLayoutProps) {
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => navigate('/railroad')}>
                     Railroad
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/service-status')}>
+                    Service Status
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -129,10 +133,17 @@ export default function MainLayout({ children }: MainLayoutProps) {
               </Button>
               <Button 
                 variant={isActive('/railroad') ? 'default' : 'ghost'} 
-                className={`rounded-none ${isActive('/railroad') ? 'dark:text-white' : ''}`}
+                className={`rounded-none border-r ${isActive('/railroad') ? 'dark:text-white' : ''}`}
                 onClick={() => navigate('/railroad')}
               >
                 Railroad
+              </Button>
+              <Button 
+                variant={isActive('/service-status') ? 'default' : 'ghost'} 
+                className={`rounded-none ${isActive('/service-status') ? 'dark:text-white' : ''}`}
+                onClick={() => navigate('/service-status')}
+              >
+                Service Status
               </Button>
             </div>
 

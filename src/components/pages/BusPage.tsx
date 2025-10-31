@@ -8,7 +8,7 @@ import icon from 'leaflet/dist/images/marker-icon.png'
 import iconShadow from 'leaflet/dist/images/marker-shadow.png'
 import { useEffect, useState } from 'react'
 import { Button } from '../ui/button'
-import { Eye, RefreshCw, MapPin, X, Bus } from 'lucide-react'
+import { Eye, RefreshCw, MapPin, X, Bus, AlertCircle, CheckCircle, Clock, XCircle } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import {
@@ -175,6 +175,39 @@ const getBusRouteColor = (destinationName: string): string => {
   }
 }
 
+interface Alert {
+  id: string;
+  alert: {
+    informed_entity: Array<{
+      route_id?: string;
+    }>;
+    active_period: Array<{
+      start?: number;
+      end?: number;
+    }>;
+    effect?: string;
+    header_text?: {
+      translation: Array<{
+        text: string;
+      }>;
+    };
+    description_text?: {
+      translation: Array<{
+        text: string;
+      }>;
+    };
+    url?: {
+      translation: Array<{
+        text: string;
+      }>;
+    };
+  };
+}
+
+interface ServiceStatusData {
+  entity: Alert[];
+}
+
 export default function BusPage() {
   // Default center (New York City as an example - you can change this)
   const defaultCenter: [number, number] = [40.7128, -74.0060]
@@ -186,6 +219,8 @@ export default function BusPage() {
   const [lastActiveTab, setLastActiveTab] = useState<string>('search')
   const [hasLoadedRoutes, setHasLoadedRoutes] = useState<boolean>(false)
   const [busStopsData, setBusStopsData] = useState<CleanedBusStopsData | null>(null)
+  const [serviceAlerts, setServiceAlerts] = useState<ServiceStatusData | null>(null)
+  const [loadingAlerts, setLoadingAlerts] = useState(false)
 
   // Clear map markers when switching tabs
   useEffect(() => {
@@ -268,6 +303,82 @@ export default function BusPage() {
     
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
+
+  // Fetch bus service alerts
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      setLoadingAlerts(true);
+      try {
+        const response = await fetch('https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fbus-alerts.json');
+        if (!response.ok) throw new Error('Failed to fetch alerts');
+        const data = await response.json();
+        setServiceAlerts(data);
+      } catch (error) {
+        console.error('Error fetching service alerts:', error);
+        setServiceAlerts(null);
+      } finally {
+        setLoadingAlerts(false);
+      }
+    };
+
+    fetchAlerts();
+    // Refresh every 2 minutes
+    const interval = setInterval(fetchAlerts, 120000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isAlertActive = (alert: Alert): boolean => {
+    const now = Math.floor(Date.now() / 1000);
+    if (!alert.alert.active_period || alert.alert.active_period.length === 0) return true;
+    return alert.alert.active_period.some(period => {
+      if (period.start && period.end) return now >= period.start && now <= period.end;
+      if (period.start && !period.end) return now >= period.start;
+      if (!period.start && period.end) return now <= period.end;
+      return true;
+    });
+  };
+
+  const getActivePeriod = (alert: Alert) => {
+    const now = Math.floor(Date.now() / 1000);
+    if (!alert.alert.active_period || alert.alert.active_period.length === 0) return null;
+    const activePeriod = alert.alert.active_period.find(period => {
+      if (period.start && period.end) return now >= period.start && now <= period.end;
+      if (period.start && !period.end) return now >= period.start;
+      if (!period.start && period.end) return now <= period.end;
+      return true;
+    });
+    return activePeriod || alert.alert.active_period[0];
+  };
+
+  const getAlertsForRoute = (routeId: string): Alert[] => {
+    if (!serviceAlerts || !serviceAlerts.entity) return [];
+    return serviceAlerts.entity.filter(alert => 
+      alert.alert.informed_entity.some(entity => entity.route_id === routeId) &&
+      isAlertActive(alert)
+    );
+  };
+
+  const getAlertSeverityIcon = (effect?: string) => {
+    switch (effect) {
+      case 'SIGNIFICANT_DELAYS':
+      case 'REDUCED_SERVICE':
+        return <AlertCircle className="text-yellow-500" size={18} />;
+      case 'NO_SERVICE':
+      case 'SUSPENDED_SERVICE':
+        return <XCircle className="text-red-500" size={18} />;
+      case 'DETOUR':
+      case 'MODIFIED_SERVICE':
+        return <Clock className="text-orange-500" size={18} />;
+      default:
+        return <AlertCircle className="text-blue-500" size={18} />;
+    }
+  };
+
+  const formatDate = (timestamp?: number) => {
+    if (!timestamp) return 'Ongoing';
+    const date = new Date(timestamp * 1000);
+    return date.toLocaleString();
+  };
 
   // Only load routes data once, when Search tab is selected for the first time
   useEffect(() => {
@@ -787,6 +898,74 @@ export default function BusPage() {
                       ? `${busStopsData.zeroDirStopsData.length} stops` 
                       : `${busStopsData.oneDirStopsData.length} stops`}
                   </p>
+
+                  {/* Service Alerts for Selected Route */}
+                  {(() => {
+                    const alerts = getAlertsForRoute(busStopsData.route);
+                    if (alerts.length === 0) {
+                      return (
+                        <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg flex items-center gap-2">
+                          <CheckCircle className="text-green-600 dark:text-green-400" size={18} />
+                          <span className="text-sm font-medium text-green-800 dark:text-green-200">Good Service</span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="mb-4 space-y-3">
+                        <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                          <AlertCircle size={16} />
+                          Service Alerts ({alerts.length})
+                        </h4>
+                        {alerts.map((alert) => {
+                          const headerText = alert.alert.header_text?.translation[0]?.text || 'Service Alert';
+                          const descriptionText = alert.alert.description_text?.translation[0]?.text || '';
+                          const activePeriod = getActivePeriod(alert);
+                          const totalPeriods = alert.alert.active_period?.length || 0;
+                          const periodIndex = activePeriod ? alert.alert.active_period?.indexOf(activePeriod) ?? -1 : -1;
+
+                          return (
+                            <div
+                              key={alert.id}
+                              className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg"
+                            >
+                              <div className="flex items-start gap-2">
+                                <div className="mt-0.5">{getAlertSeverityIcon(alert.alert.effect)}</div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-sm text-foreground mb-1">{headerText}</div>
+                                  {descriptionText && (
+                                    <p className="text-xs text-muted-foreground mb-2 line-clamp-2">{descriptionText}</p>
+                                  )}
+                                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                                    {totalPeriods > 1 && periodIndex >= 0 && (
+                                      <span className="px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200">
+                                        Period {periodIndex + 1} of {totalPeriods}
+                                      </span>
+                                    )}
+                                    {activePeriod?.start && (
+                                      <span><strong>Start:</strong> {formatDate(activePeriod.start)}</span>
+                                    )}
+                                    {activePeriod?.end && (
+                                      <span><strong>End:</strong> {formatDate(activePeriod.end)}</span>
+                                    )}
+                                  </div>
+                                  {alert.alert.url?.translation[0]?.text && (
+                                    <a
+                                      href={alert.alert.url.translation[0].text}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 dark:text-blue-400 hover:underline text-xs mt-1 inline-block"
+                                    >
+                                      More Info →
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                   <ul className="space-y-1 max-h-64 overflow-y-auto">
                     {(selectedDirection === '0' 
                       ? busStopsData.zeroDirStopsData 

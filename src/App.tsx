@@ -4,6 +4,7 @@ import BusPage from './components/pages/BusPage'
 import MetroPage from './components/pages/MetroPage'
 import RailRoadPage from './components/pages/RailRoadPage'
 import SbuBusPage from './components/pages/SbuBusPage'
+import ServiceStatusPage from './components/pages/ServiceStatusPage'
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
           <Route path="/sbu-bus" element={<SbuBusPage />} />
           <Route path="/metro" element={<MetroPage />} />
           <Route path="/railroad" element={<RailRoadPage />} />
+          <Route path="/service-status" element={<ServiceStatusPage />} />
           <Route path="/" element={<Navigate to="/bus" replace />} />
         </Routes>
       </MainLayout>

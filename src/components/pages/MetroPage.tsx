@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
-import { Train, ArrowLeft } from 'lucide-react';
+import { Train, ArrowLeft, AlertCircle, CheckCircle, Clock, XCircle } from 'lucide-react';
 import { 
   getSubwayRouteGroups,
   type SubwayRoute 
@@ -18,6 +18,39 @@ import {
   fetchSubwayArrivals,
   type SubwayRealtimeData
 } from '../../services/mta-subway-realtime';
+
+interface Alert {
+  id: string;
+  alert: {
+    informed_entity: Array<{
+      route_id?: string;
+    }>;
+    active_period: Array<{
+      start?: number;
+      end?: number;
+    }>;
+    effect?: string;
+    header_text?: {
+      translation: Array<{
+        text: string;
+      }>;
+    };
+    description_text?: {
+      translation: Array<{
+        text: string;
+      }>;
+    };
+    url?: {
+      translation: Array<{
+        text: string;
+      }>;
+    };
+  };
+}
+
+interface ServiceStatusData {
+  entity: Alert[];
+}
 
 export default function MetroPage() {
   const [activeTab, setActiveTab] = useState('search');
@@ -36,6 +69,8 @@ export default function MetroPage() {
   const [stopIdError, setStopIdError] = useState('');
   const [loadingStopId, setLoadingStopId] = useState(false);
   const [filteredRoutes, setFilteredRoutes] = useState<Set<string>>(new Set());
+  const [serviceAlerts, setServiceAlerts] = useState<ServiceStatusData | null>(null);
+  const [loadingAlerts, setLoadingAlerts] = useState(false);
 
   // Load route groups on mount
   useEffect(() => {
@@ -58,6 +93,29 @@ export default function MetroPage() {
         console.error('Error loading routes:', error);
         setLoadingRoutes(false);
       });
+  }, []);
+
+  // Fetch service alerts
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      setLoadingAlerts(true);
+      try {
+        const response = await fetch('https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fsubway-alerts.json');
+        if (response.ok) {
+          const data = await response.json();
+          setServiceAlerts(data);
+        }
+      } catch (error) {
+        console.error('Error loading service alerts:', error);
+      } finally {
+        setLoadingAlerts(false);
+      }
+    };
+
+    fetchAlerts();
+    // Refresh every 2 minutes
+    const interval = setInterval(fetchAlerts, 120000);
+    return () => clearInterval(interval);
   }, []);
 
   const availableRoutes = selectedRouteGroup 
@@ -95,6 +153,91 @@ export default function MetroPage() {
     setFilteredRoutes(new Set()); // Reset filters when selecting a new stop
     // Fetch realtime data for the stop
     fetchRealtimeData(stop);
+  };
+
+  const getAlertSeverityIcon = (effect?: string) => {
+    switch (effect) {
+      case 'SIGNIFICANT_DELAYS':
+      case 'REDUCED_SERVICE':
+        return <AlertCircle className="text-yellow-500" size={18} />;
+      case 'NO_SERVICE':
+      case 'SUSPENDED_SERVICE':
+        return <XCircle className="text-red-500" size={18} />;
+      case 'DETOUR':
+      case 'MODIFIED_SERVICE':
+        return <Clock className="text-orange-500" size={18} />;
+      default:
+        return <AlertCircle className="text-blue-500" size={18} />;
+    }
+  };
+
+  const formatDate = (timestamp?: number) => {
+    if (!timestamp) return 'Ongoing';
+    const date = new Date(timestamp * 1000);
+    return date.toLocaleString();
+  };
+
+  const isAlertActive = (alert: Alert): boolean => {
+    const now = Math.floor(Date.now() / 1000); // Current time in Unix timestamp
+    
+    // If no active period is specified, consider the alert always active
+    if (!alert.alert.active_period || alert.alert.active_period.length === 0) {
+      return true;
+    }
+
+    // Check if ANY period is currently active
+    return alert.alert.active_period.some(period => {
+      // If both start and end exist, check if current time is within range
+      if (period.start && period.end) {
+        return now >= period.start && now <= period.end;
+      }
+      
+      // If only start exists, check if it has started
+      if (period.start && !period.end) {
+        return now >= period.start;
+      }
+      
+      // If only end exists, check if it hasn't ended
+      if (!period.start && period.end) {
+        return now <= period.end;
+      }
+      
+      // If neither start nor end exist, consider it always active
+      return true;
+    });
+  };
+
+  const getActivePeriod = (alert: Alert) => {
+    const now = Math.floor(Date.now() / 1000);
+    
+    if (!alert.alert.active_period || alert.alert.active_period.length === 0) {
+      return null;
+    }
+
+    // Find the first period that is currently active
+    const activePeriod = alert.alert.active_period.find(period => {
+      if (period.start && period.end) {
+        return now >= period.start && now <= period.end;
+      }
+      if (period.start && !period.end) {
+        return now >= period.start;
+      }
+      if (!period.start && period.end) {
+        return now <= period.end;
+      }
+      return true;
+    });
+
+    // If we found an active period, return it; otherwise return the first period
+    return activePeriod || alert.alert.active_period[0];
+  };
+
+  const getAlertsForRoute = (routeId: string): Alert[] => {
+    if (!serviceAlerts || !serviceAlerts.entity) return [];
+    return serviceAlerts.entity.filter(alert => 
+      alert.alert.informed_entity.some(entity => entity.route_id === routeId) &&
+      isAlertActive(alert)
+    );
   };
 
   const toggleRouteFilter = (routeId: string) => {
@@ -326,29 +469,128 @@ export default function MetroPage() {
                 )}
 
                 {selectedRoute && stops.length > 0 && (
-                  <div className="bg-card rounded-xl border shadow-sm p-6">
-                    <div className="flex items-center gap-3 mb-4 pb-4 border-b">
-                      <span
-                        className="px-4 py-2 rounded-full font-bold text-xl"
-                        style={{
-                          backgroundColor: selectedRoute.color,
-                          color: selectedRoute.textColor
-                        }}
-                      >
-                        {selectedRoute.shortName}
-                      </span>
-                      <div>
-                        <h2 className="text-xl font-bold text-foreground">
-                          {selectedRoute.longName}
-                        </h2>
-                        <p className="text-sm text-muted-foreground">
-                          {stops.length} stations • Click a station to view arrivals
-                        </p>
+                  <>
+                    {/* Service Status Alerts */}
+                    {(() => {
+                      const alerts = getAlertsForRoute(selectedRoute.id);
+                      if (alerts.length > 0) {
+                        return (
+                          <div className="bg-card rounded-xl border shadow-sm p-6 mb-6">
+                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                              <AlertCircle className="text-yellow-500" size={20} />
+                              Service Alerts for this Line
+                            </h3>
+                            <div className="space-y-3">
+                              {alerts.map(alert => {
+                                const headerText = alert.alert.header_text?.translation[0]?.text || 'Service Alert';
+                                const descriptionText = alert.alert.description_text?.translation[0]?.text || '';
+                                return (
+                                  <div
+                                    key={alert.id}
+                                    className="border rounded-lg p-4 bg-yellow-50 dark:bg-yellow-950/20 hover:shadow-md transition-shadow"
+                                  >
+                                    <div className="flex items-start gap-3">
+                                      <div className="mt-0.5">{getAlertSeverityIcon(alert.alert.effect)}</div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-start justify-between gap-2 mb-2">
+                                          <h4 className="font-semibold text-sm">{headerText}</h4>
+                                          {alert.alert.effect && (
+                                            <span className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 whitespace-nowrap shrink-0">
+                                              {alert.alert.effect.replace(/_/g, ' ')}
+                                            </span>
+                                          )}
+                                        </div>
+                                        {descriptionText && (
+                                          <p className="text-xs text-gray-700 dark:text-gray-300 mb-2 whitespace-pre-wrap">
+                                            {descriptionText}
+                                          </p>
+                                        )}
+                                        <div className="flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
+                                          {(() => {
+                                            const activePeriod = getActivePeriod(alert);
+                                            if (!activePeriod) return null;
+                                            
+                                            const totalPeriods = alert.alert.active_period?.length || 0;
+                                            const periodIndex = alert.alert.active_period?.indexOf(activePeriod) ?? -1;
+                                            const showPeriodLabel = totalPeriods > 1 && periodIndex >= 0;
+                                            
+                                            return (
+                                              <>
+                                                {showPeriodLabel && (
+                                                  <div className="w-full mb-1">
+                                                    <span className="text-xs px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200">
+                                                      Period {periodIndex + 1} of {totalPeriods}
+                                                    </span>
+                                                  </div>
+                                                )}
+                                                {activePeriod.start && (
+                                                  <div>
+                                                    <span className="font-semibold">Start:</span>{' '}
+                                                    {formatDate(activePeriod.start)}
+                                                  </div>
+                                                )}
+                                                {activePeriod.end && (
+                                                  <div>
+                                                    <span className="font-semibold">End:</span>{' '}
+                                                    {formatDate(activePeriod.end)}
+                                                  </div>
+                                                )}
+                                              </>
+                                            );
+                                          })()}
+                                        </div>
+                                        {alert.alert.url?.translation[0]?.text && (
+                                          <a
+                                            href={alert.alert.url.translation[0].text}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-blue-600 dark:text-blue-400 hover:underline text-xs mt-2 inline-block"
+                                          >
+                                            More Information →
+                                          </a>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      } else if (!loadingAlerts) {
+                        return (
+                          <div className="bg-card rounded-xl border shadow-sm p-4 mb-6 flex items-center gap-2 text-green-600">
+                            <CheckCircle size={18} />
+                            <span className="text-sm font-semibold">Good Service - No Active Alerts</span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    <div className="bg-card rounded-xl border shadow-sm p-6">
+                      <div className="flex items-center gap-3 mb-4 pb-4 border-b">
+                        <span
+                          className="px-4 py-2 rounded-full font-bold text-xl"
+                          style={{
+                            backgroundColor: selectedRoute.color,
+                            color: selectedRoute.textColor
+                          }}
+                        >
+                          {selectedRoute.shortName}
+                        </span>
+                        <div>
+                          <h2 className="text-xl font-bold text-foreground">
+                            {selectedRoute.longName}
+                          </h2>
+                          <p className="text-sm text-muted-foreground">
+                            {stops.length} stations • Click a station to view arrivals
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="text-sm text-muted-foreground mb-3">
-                      {selectedRoute.description}
-                    </div>
+                      <div className="text-sm text-muted-foreground mb-3">
+                        {selectedRoute.description}
+                      </div>
                     <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
                       {stops.map((stop, index) => (
                         <div
@@ -386,8 +628,9 @@ export default function MetroPage() {
                           </div>
                         </div>
                       ))}
+                      </div>
                     </div>
-                  </div>
+                  </>
                 )}
               </div>
             </TabsContent>
