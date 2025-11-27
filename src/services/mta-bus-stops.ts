@@ -9,7 +9,7 @@ export interface BusStop {
 
 import { XMLParser } from 'fast-xml-parser';
 
-const MTA_API_KEY = import.meta.env.VITE_MTA_API_KEY;
+const MTA_API_KEY = 'b1af2818-ea0d-4b2f-b632-5119632b6ae3';
 
 const parseXML = (xml: string): any => {
   const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });

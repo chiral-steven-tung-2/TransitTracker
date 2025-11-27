@@ -91,7 +91,7 @@ const cleanMTARoutesData = (rawData: any): CleanedRoutesData => {
 
 export const fetchNYCTBusRoutesData = async (): Promise<CleanedRoutesData> => {
 	try {
-		const url = `/api/mta/api/where/routes-for-agency/MTA%20NYCT.xml?key=${import.meta.env.VITE_MTA_API_KEY}`;
+		const url = '/api/mta/api/where/routes-for-agency/MTA%20NYCT.xml?key=b1af2818-ea0d-4b2f-b632-5119632b6ae3';
 		const response = await fetch(url);
 		if (!response.ok) {
 			throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
@@ -109,7 +109,7 @@ export const fetchNYCTBusRoutesData = async (): Promise<CleanedRoutesData> => {
 
 export const fetchBCBusRoutesData = async (): Promise<CleanedRoutesData> => {
 	try {
-		const url = `/api/mta/api/where/routes-for-agency/MTABC.xml?key=${import.meta.env.VITE_MTA_API_KEY}`;
+		const url = '/api/mta/api/where/routes-for-agency/MTABC.xml?key=b1af2818-ea0d-4b2f-b632-5119632b6ae3';
 		const response = await fetch(url);
 		if (!response.ok) {
 			throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
