@@ -219,7 +219,7 @@ export function cleanMTABusData(siriData: MTABusResponse): CleanedBusData {
 export async function fetchMTABusData(stopId: string | number): Promise<CleanedBusData | null> {
   try {
     // Use Vite proxy to avoid CORS issues
-    const URL = `/api/mta/api/siri/stop-monitoring.json?key=b1af2818-ea0d-4b2f-b632-5119632b6ae3&OperatorRef=MTA&MonitoringRef=${encodeURIComponent(stopId)}`;
+    const URL = `/api/mta/api/siri/stop-monitoring.json?key=${import.meta.env.VITE_MTA_API_KEY}&OperatorRef=MTA&MonitoringRef=${encodeURIComponent(stopId)}`;
     const response = await fetch(URL);
     
     if (!response.ok) {

@@ -220,7 +220,6 @@ export default function BusPage() {
   const [hasLoadedRoutes, setHasLoadedRoutes] = useState<boolean>(false)
   const [busStopsData, setBusStopsData] = useState<CleanedBusStopsData | null>(null)
   const [serviceAlerts, setServiceAlerts] = useState<ServiceStatusData | null>(null)
-  const [loadingAlerts, setLoadingAlerts] = useState(false)
 
   // Clear map markers when switching tabs
   useEffect(() => {
@@ -307,7 +306,6 @@ export default function BusPage() {
   // Fetch bus service alerts
   useEffect(() => {
     const fetchAlerts = async () => {
-      setLoadingAlerts(true);
       try {
         const response = await fetch('https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fbus-alerts.json');
         if (!response.ok) throw new Error('Failed to fetch alerts');
@@ -316,8 +314,6 @@ export default function BusPage() {
       } catch (error) {
         console.error('Error fetching service alerts:', error);
         setServiceAlerts(null);
-      } finally {
-        setLoadingAlerts(false);
       }
     };
 

@@ -70,7 +70,6 @@ export default function RailRoadPage() {
   const [filteredRoutes, setFilteredRoutes] = useState<Set<string>>(new Set());
   const [showDepartedTrains, setShowDepartedTrains] = useState(false);
   const [serviceAlerts, setServiceAlerts] = useState<ServiceStatusData | null>(null);
-  const [loadingAlerts, setLoadingAlerts] = useState(false);
 
   // Load routes when railroad is selected
   useEffect(() => {
@@ -108,7 +107,6 @@ export default function RailRoadPage() {
         return;
       }
 
-      setLoadingAlerts(true);
       try {
         const endpoint = selectedRailroad === 'lirr' 
           ? 'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Flirr-alerts.json'
@@ -121,8 +119,6 @@ export default function RailRoadPage() {
       } catch (error) {
         console.error('Error fetching service alerts:', error);
         setServiceAlerts(null);
-      } finally {
-        setLoadingAlerts(false);
       }
     };
 
